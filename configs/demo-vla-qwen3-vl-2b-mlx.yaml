@@ -1,0 +1,104 @@
+simulator:
+  map: XTOC
+  traffic_density: 0.0
+  obstacle_probability: 0.0
+  num_scenarios: 1
+  start_seed: 0
+  decision_repeat: 5
+  horizon: 500
+  use_lidar: true
+  headless: false
+  manual_control: false
+  realtime: true
+  realtime_factor: 1.0
+  out_of_road_done: false
+  crash_vehicle_done: false
+  crash_object_done: false
+
+camera:
+  enabled: true
+  width: 512
+  height: 288
+
+display:
+  speed_unit: kph
+
+vla:
+  enabled: true
+  prompt_policy: >-
+    On a clear lane, prefer the cruise speed. Reduce target speed for visible
+    hazards, uncertainty, road geometry, or traffic controls; use 0 only when a
+    full stop is intended. Maintain safe forward progress. When
+    LOCAL_SCENE_CONTEXT confirms that a stationary lead blocks the current lane
+    and an adjacent lane is available and observed clear, prefer changing into
+    that lane over stopping or following. In LOCAL_SCENE_CONTEXT,
+    observed_clear=false means that side is occupied. Never propose a lane change
+    into a lane when available=false or observed_clear=false.
+  action_speed_policy_mode: enforce
+  request_timeout_s: 60.0
+  minimum_interval_s: 0.5
+  # Qwen takes about 1.1 s wall time / 1.6 s simulation time on the reference Mac.
+  # Three seconds leaves useful control lifetime without hiding source-frame age.
+  action_horizon_s: 3.0
+  max_scene_objects: 8
+  maximum_frame_age_s: 0.5
+  maximum_clock_skew_s: 0.05
+  http:
+    endpoint_url: http://127.0.0.1:8080/v1/chat/completions
+    model_id: mlx-community/Qwen3-VL-2B-Instruct-4bit
+    api_key_env: null
+    max_response_bytes: 1048576
+    max_tokens: 512
+    allow_insecure_http: false
+    structured_output: true
+    # Sampled, as Assignment 2 grading samples it: answers vary between runs, so
+    # report live figures as the median and range over several runs.
+    temperature: 0.7
+
+controller:
+  target_speed_mps: 5.555555555555555
+
+planner:
+  route_source: map
+  lookahead_m: 6.0
+  waypoint_spacing_m: 2.0
+  lane_change_enabled: true
+  lane_change_transition_m: 18.0
+  lane_change_timeout_s: 8.0
+  lane_change_completion_tolerance_m: 0.6
+
+perception:
+  prefer_info: true
+  safety_source: oracle
+  detection_radius_m: 50.0
+  corridor_margin_m: 0.5
+
+safety:
+  enabled: true
+  headway_speed_cap_mode: shadow
+  caution_ttc_s: 3.0
+  emergency_ttc_s: 1.5
+  minimum_gap_m: 3.0
+  minimum_headway_s: 1.5
+  reaction_time_s: 0.5
+  maximum_deceleration_mps2: 6.0
+  stale_after_s: 0.2
+  release_hold_s: 0.3
+  service_brake: 0.5
+
+command_validation:
+  minimum_confidence: 0.5
+  maximum_command_age_s: 2.0
+  maximum_clock_skew_s: 0.25
+  scene_stale_after_s: 0.2
+  maximum_target_speed_mps: 5.555555555555555
+  slow_down_speed_mps: 5.555555555555555
+  yield_speed_mps: 2.7777777777777777
+  lane_change_front_gap_m: 12.0
+  lane_change_rear_gap_m: 10.0
+  lane_change_minimum_ttc_s: 3.0
+
+event_log:
+  enabled: true
+  path: tmp/demo-vla-events.jsonl
+  scenario_id: qwen3-vl-runtime-demo

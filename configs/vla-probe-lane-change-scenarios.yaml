@@ -1,0 +1,57 @@
+# A stopped obstacle in the ego lane: change into a clear adjacent lane, and wait
+# when that lane is blocked too; slowing down is never the answer. The public
+# catalog, configs/vla-probe-scenarios.yaml, asks the same of stopped-vehicle and
+# all-lanes-blocked; lane-change-clear-right is its stopped-vehicle scene.
+version: 2
+
+scenarios:
+  - id: lane-change-clear-right
+    description: A stopped lead vehicle blocks the ego lane while the adjacent right lane remains clear.
+    expected_visual: A stopped car is visible ahead in the ego lane and the right lane is unobstructed.
+    map: S
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    vehicles:
+      - id: stopped-lead
+        distance_m: 22.0
+        lane_offset: 0
+        lateral_m: 0.0
+        kind: car
+    evaluation:
+      acceptable_actions: [CHANGE_LANE_RIGHT]
+      minimum_target_speed_mps: 2.7777777777777777
+      maximum_target_speed_mps: 5.555555555555555
+      raw_speed_required: false
+      required_hazards:
+        - type: vehicle
+          relative_location: front
+
+  - id: lane-change-right-blocked
+    description: A stopped lead vehicle blocks the ego lane and another vehicle blocks the adjacent right lane.
+    expected_visual: One stopped car is ahead in the ego lane and another car occupies the adjacent right lane.
+    map: S
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    vehicles:
+      - id: stopped-lead
+        distance_m: 22.0
+        lane_offset: 0
+        lateral_m: 0.0
+        kind: car
+      - id: right-lane-blocker
+        distance_m: 16.0
+        lane_offset: 1
+        lateral_m: 0.0
+        kind: car
+    evaluation:
+      acceptable_actions: [FOLLOW, STOP]
+      minimum_target_speed_mps: 0.0
+      maximum_target_speed_mps: 5.555555555555555
+      raw_speed_required: false
+      required_hazards:
+        - type: vehicle
+          relative_location: front
+        - type: vehicle
+          relative_location: front_right

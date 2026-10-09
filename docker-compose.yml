@@ -1,0 +1,10 @@
+services:
+  metadrive:
+    build: .
+    image: metadrive-sim-starter:latest
+    environment:
+      DISPLAY: ${DISPLAY:-}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - .:/app
+    working_dir: /app

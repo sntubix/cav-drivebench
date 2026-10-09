@@ -1,0 +1,22 @@
+camera:
+  enabled: true
+  width: 512
+  height: 288
+
+vla:
+  enabled: true
+  prompt_policy: >-
+    On a clear lane, prefer the cruise speed. Reduce target speed for visible
+    hazards, uncertainty, road geometry, or traffic controls; use 0 only when a
+    full stop is intended. Maintain safe forward progress. When
+    LOCAL_SCENE_CONTEXT confirms that a stationary lead blocks the current lane
+    and an adjacent lane is available and observed clear, prefer changing into
+    that lane over stopping or following. In LOCAL_SCENE_CONTEXT,
+    observed_clear=false means that side is occupied. Never propose a lane change
+    into a lane when available=false or observed_clear=false.
+  provider: fixture
+  request_timeout_s: 10.0
+  action_horizon_s: 2.0
+  fixture:
+    path: fixtures/vla/providers/vertex-gemini-3.5-flash-lite-20260824
+    repeat_last: false

@@ -1,0 +1,88 @@
+version: 1
+id: drivebench-gates-assignment-2-public
+visibility: public
+no_score: >-
+  Assignment 2 is marked from hidden runs with the pinned model, never from
+  this run; see course/assignment-2/rubric.md.
+
+# Assignment 2 drives the Assignment 1 routes with the model asked, so it needs a
+# base configuration that enables vla:
+#
+#   uv run metadrive-starter gates --manifest configs/gates-assignment-2.yaml \
+#     --config configs/demo-vla-fixture.yaml
+#
+# The run reports no score. Assignment 1's score would mean nothing here, and
+# Assignment 2 is marked from hidden runs.
+#
+# Fault scenarios inject one published fault kind each, by simulation step. A
+# fault scenario need not arrive: it is judged only on whether a fault crashed the
+# vehicle, sent it off the road, or stopped the run. Instructors grade with other
+# timings, maps, and combinations.
+scenarios:
+  - id: straight
+    map: S
+    seed: 0
+    horizon: 2000
+  - id: curve
+    map: C
+    seed: 0
+    horizon: 2000
+  - id: intersection
+    map: X
+    seed: 0
+    horizon: 2000
+  - id: roundabout
+    map: O
+    seed: 0
+    horizon: 2000
+  - id: mixed
+    map: XTOC
+    seed: 0
+    horizon: 2000
+
+  # The camera stops while a stopped car comes into range: no new model request.
+  - id: camera-dropout
+    map: S
+    seed: 0
+    horizon: 250
+    stopped_vehicle_ahead_m: 45.0
+    faults:
+      - {id: camera-1, kind: camera_dropout, start_step: 15, duration_steps: 60}
+  # LiDAR detections vanish on the approach, so the safety scene is invalid.
+  - id: lidar-dropout
+    map: S
+    seed: 0
+    horizon: 250
+    safety_source: lidar
+    stopped_vehicle_ahead_m: 45.0
+    faults:
+      - {id: lidar-1, kind: lidar_dropout, start_step: 30, duration_steps: 20}
+  # Every request in the window times out.
+  - id: provider-timeout
+    map: C
+    seed: 0
+    horizon: 250
+    faults:
+      - {id: timeout-1, kind: provider_timeout, start_step: 10, duration_steps: 60}
+  # Every request in the window fails at the provider.
+  - id: provider-error
+    map: X
+    seed: 0
+    horizon: 250
+    faults:
+      - {id: error-1, kind: provider_error, start_step: 10, duration_steps: 60}
+  # Answers arrive late, against a stopped car ahead.
+  - id: provider-latency
+    map: S
+    seed: 0
+    horizon: 250
+    stopped_vehicle_ahead_m: 45.0
+    faults:
+      - {id: latency-1, kind: provider_latency, start_step: 10, duration_steps: 60, latency_s: 0.8}
+  # Answers arrive in a form the decoder refuses.
+  - id: malformed-output
+    map: O
+    seed: 0
+    horizon: 250
+    faults:
+      - {id: malformed-1, kind: malformed_output, start_step: 10, duration_steps: 60}

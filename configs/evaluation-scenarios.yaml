@@ -1,0 +1,30 @@
+version: 1
+
+seeds: [0, 1, 2]
+
+scenarios:
+  - id: clear-baseline
+    map: XTOC
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 250
+
+  - id: stopped-lead
+    map: XTOC
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 250
+    stopped_vehicle_ahead_m: 25.0
+
+  - id: lidar-dropout
+    map: XTOC
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 250
+    safety_source: lidar
+    stopped_vehicle_ahead_m: 25.0
+    faults:
+      - id: lidar-loss-1
+        kind: lidar_dropout
+        start_step: 50
+        duration_steps: 20

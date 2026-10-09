@@ -1,0 +1,175 @@
+version: 2
+
+scenarios:
+  - id: clear-straight
+    description: Unobstructed straight-road baseline with no generated traffic.
+    expected_visual: Clear lane markings and an unobstructed road extending to the horizon.
+    map: S
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    evaluation:
+      acceptable_actions: [KEEP_LANE]
+      minimum_target_speed_mps: 6.944444444444445
+      maximum_target_speed_mps: 9.722222222222221
+      raw_speed_required: false
+
+  # A stopped obstacle in the ego lane: change into a clear adjacent lane, and wait
+  # only when every lane is blocked (all-lanes-blocked). Slowing down still closes
+  # on a stopped vehicle, so it is never the answer.
+  - id: stopped-vehicle
+    description: A stationary lead vehicle directly on the ego route, with the adjacent right lane clear.
+    expected_visual: One stopped car clearly visible in the ego lane at decision distance, and an empty lane to its right.
+    map: S
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    evaluation:
+      acceptable_actions: [CHANGE_LANE_RIGHT]
+      minimum_target_speed_mps: 2.7777777777777777
+      maximum_target_speed_mps: 5.555555555555555
+      raw_speed_required: false
+      required_hazards:
+        - type: vehicle
+          relative_location: front
+    vehicles:
+      - id: lead-car
+        distance_m: 22.0
+        lane_offset: 0
+        lateral_m: 0.0
+        kind: car
+
+  - id: curved-road
+    description: Clear curved road for checking bend and lane-boundary interpretation.
+    expected_visual: A visible bend with continuous road edges and legible lane markings.
+    map: C
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    evaluation:
+      acceptable_actions: [KEEP_LANE, SLOW_DOWN]
+      minimum_target_speed_mps: 4.166666666666667
+      maximum_target_speed_mps: 9.722222222222221
+      raw_speed_required: false
+      required_hazards:
+        - type: road_feature
+          relative_location: front
+
+  - id: intersection
+    description: Clear four-way intersection without generated traffic.
+    expected_visual: Intersection geometry and multiple possible road continuations are visible.
+    map: X
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    evaluation:
+      acceptable_actions: [KEEP_LANE, SLOW_DOWN, YIELD]
+      minimum_target_speed_mps: 2.7777777777777777
+      maximum_target_speed_mps: 8.333333333333334
+      raw_speed_required: false
+      required_hazards:
+        - type: road_feature
+          relative_location: front
+
+  - id: red-light-with-traffic
+    description: A red traffic light controls the ego approach while seeded traffic occupies the intersection.
+    expected_visual: A red signal is visible ahead at a four-way intersection with surrounding traffic present.
+    map: X
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.15
+    traffic_light:
+      distance_m: 38.0
+      state: red
+      visual_scale: 1.75
+    evaluation:
+      acceptable_actions: [STOP]
+      minimum_target_speed_mps: 0.0
+      maximum_target_speed_mps: 2.7777777777777777
+      raw_speed_required: false
+      required_hazards:
+        - type: traffic_control
+          relative_location: front
+
+  - id: adjacent-traffic
+    description: A stationary vehicle in the lane adjacent to the ego route.
+    expected_visual: One car is clearly visible ahead in a neighbouring lane while the ego lane stays clear.
+    map: S
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    evaluation:
+      acceptable_actions: [KEEP_LANE, SLOW_DOWN]
+      minimum_target_speed_mps: 5.555555555555555
+      maximum_target_speed_mps: 9.722222222222221
+      raw_speed_required: false
+      required_hazards:
+        - type: vehicle
+          relative_location: front_right
+    vehicles:
+      - id: adjacent-car
+        distance_m: 18.0
+        lane_offset: 1
+        lateral_m: 0.0
+        kind: car
+
+  - id: partial-occlusion
+    description: A stopped truck partially obscures a more distant stopped car in the ego lane, with the adjacent right lane clear.
+    expected_visual: The nearer truck dominates the ego lane while part of the farther hazard remains visible.
+    map: S
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    evaluation:
+      acceptable_actions: [CHANGE_LANE_RIGHT]
+      minimum_target_speed_mps: 2.7777777777777777
+      maximum_target_speed_mps: 5.555555555555555
+      raw_speed_required: false
+      required_hazards:
+        - type: vehicle
+          relative_location: front
+    vehicles:
+      - id: occluding-truck
+        distance_m: 20.0
+        lane_offset: 0
+        lateral_m: -0.5
+        kind: truck
+      - id: hidden-car
+        distance_m: 30.0
+        lane_offset: 0
+        lateral_m: 1.2
+        kind: car
+
+  - id: all-lanes-blocked
+    description: Stopped vehicles block the ego lane and every lane to its right.
+    expected_visual: A stopped car is ahead in the ego lane and a stopped car occupies each lane to its right.
+    map: S
+    seed: 0
+    settle_steps: 1
+    traffic_density: 0.0
+    evaluation:
+      acceptable_actions: [FOLLOW, STOP]
+      minimum_target_speed_mps: 0.0
+      maximum_target_speed_mps: 5.555555555555555
+      raw_speed_required: false
+      required_hazards:
+        - type: vehicle
+          relative_location: front
+        - type: vehicle
+          relative_location: front_right
+    vehicles:
+      - id: stopped-lead
+        distance_m: 22.0
+        lane_offset: 0
+        lateral_m: 0.0
+        kind: car
+      - id: right-lane-blocker
+        distance_m: 16.0
+        lane_offset: 1
+        lateral_m: 0.0
+        kind: car
+      - id: far-right-lane-blocker
+        distance_m: 19.0
+        lane_offset: 2
+        lateral_m: 0.0
+        kind: car

@@ -1,0 +1,36 @@
+version: 1
+id: drivebench-gates-assignment-1-public
+visibility: public
+
+# Every Assignment 1 submission, the shipped stub included, must drive these
+# zero-traffic routes without a crash or off-road exit. Horizons are generous:
+# a gate catches a controller that breaks the run, not one that is merely slow.
+# par_steps is the reference controller's time to arrival, which the score's
+# time credit compares against. Instructors grade with hidden scenarios in this
+# same format.
+scenarios:
+  - id: straight
+    map: S
+    seed: 0
+    horizon: 2000
+    par_steps: 134
+  - id: curve
+    map: C
+    seed: 0
+    horizon: 2000
+    par_steps: 257
+  - id: intersection
+    map: X
+    seed: 0
+    horizon: 2000
+    par_steps: 172
+  - id: roundabout
+    map: O
+    seed: 0
+    horizon: 2000
+    par_steps: 228
+  - id: mixed
+    map: XTOC
+    seed: 0
+    horizon: 2000
+    par_steps: 503

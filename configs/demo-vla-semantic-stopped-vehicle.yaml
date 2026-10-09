@@ -1,0 +1,57 @@
+# The model reports the stopped car ahead, then proposes KEEP_LANE at cruise
+# speed: the failure two unrelated model classes produced on the stopped-vehicle
+# probe scene. Hazard agreement passes this assessment, because the hazard is
+# right. Only checking the action and speed against the hazards catches it.
+#
+# The fixture replays that one answer to every request, in any scene, on any GPU.
+# Run it with your arbiter and compare the summary's vla_metrics with a run
+# without --submission, which endorses everything:
+#
+#   uv run metadrive-starter run --config configs/demo-vla-semantic-stopped-vehicle.yaml --submission submission
+#
+# Score the same answer open-loop on the matching probe scene:
+#
+#   uv run metadrive-starter probe --config configs/demo-vla-semantic-stopped-vehicle.yaml \
+#     --infer --scenario stopped-vehicle --output-dir tmp/semantic-stopped-vehicle-probe-01
+simulator:
+  map: S
+  traffic_density: 0.0
+  obstacle_probability: 0.0
+  horizon: 200
+  headless: true
+  manual_control: false
+  realtime: false
+
+camera:
+  enabled: true
+  width: 320
+  height: 180
+
+vla:
+  enabled: true
+  provider: fixture
+  action_speed_policy_mode: enforce
+  request_timeout_s: 1.0
+  minimum_interval_s: 0.5
+  action_horizon_s: 2.0
+  fixture:
+    path: fixtures/vla/providers/semantic-failures/stopped-vehicle-keep-lane.json
+    repeat_last: true
+
+# Assignment 2 drives with lane changes on, so a model's lane change to pass a
+# stopped vehicle executes, under the floor's clearance checks, rather than
+# falling back.
+planner:
+  lane_change_enabled: true
+
+safety:
+  enabled: true
+  headway_speed_cap_mode: "off"
+
+scenario:
+  stopped_vehicle_ahead_m: 45.0
+
+event_log:
+  enabled: true
+  path: tmp/demo-vla-semantic-stopped-vehicle-events.jsonl
+  scenario_id: semantic-stopped-vehicle

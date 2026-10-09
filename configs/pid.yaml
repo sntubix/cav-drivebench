@@ -1,0 +1,33 @@
+# The starting PID gains: the one place they are written.
+#
+# Every configuration drives with these values, whichever --config a run passes.
+# A configuration file that sets any of them is refused, so no scenario can carry
+# a copy that drifts; scenario files set only controller.target_speed_mps.
+#
+# They are a safe starting point, not tuned: a complete PID drives every route on
+# them, well short of the instructor reference. A team never edits this file. It
+# tunes gains in submission/agent.yaml, which DriveBench applies on top, nested
+# exactly as here.
+controller:
+  speed_pid_reset_threshold_mps: 1.0
+  speed_pid:
+    kp: 0.12
+    ki: 0.004
+    kd: 0.0
+    output_min: -1.0
+    output_max: 1.0
+    anti_windup: true
+  steering_pid:
+    kp: 1.0
+    ki: 0.0
+    kd: 0.0
+    output_min: -1.0
+    output_max: 1.0
+    anti_windup: true
+  lateral_pid:
+    kp: 0.35
+    ki: 0.0
+    kd: 0.0
+    output_min: -1.0
+    output_max: 1.0
+    anti_windup: true

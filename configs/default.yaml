@@ -1,0 +1,154 @@
+simulator:
+  map: XTOC
+  traffic_density: 0.1
+  random_traffic: false
+  traffic_mode: trigger
+  obstacle_probability: 0.0
+  num_scenarios: 1
+  start_seed: 0
+  decision_repeat: 5
+  physics_world_step_size: 0.02
+  horizon: 1000
+  use_lidar: true
+  headless: true
+  manual_control: false
+  realtime: false
+  realtime_factor: 1.0
+  out_of_road_done: true
+  crash_vehicle_done: true
+  crash_object_done: true
+
+camera:
+  enabled: false
+  width: 512
+  height: 288
+
+display:
+  speed_unit: mps
+
+vla:
+  enabled: false
+  prompt_policy: >-
+    On a clear lane, prefer the cruise speed. Reduce target speed for visible
+    hazards, uncertainty, road geometry, or traffic controls; use 0 only when a
+    full stop is intended. Maintain safe forward progress. When
+    LOCAL_SCENE_CONTEXT confirms that a stationary lead blocks the current lane
+    and an adjacent lane is available and observed clear, prefer changing into
+    that lane over stopping or following. In LOCAL_SCENE_CONTEXT,
+    observed_clear=false means that side is occupied. Never propose a lane change
+    into a lane when available=false or observed_clear=false.
+  action_speed_policy_mode: "off"
+  provider: http
+  maximum_requests_per_run: null
+  request_timeout_s: 10.0
+  minimum_interval_s: 0.5
+  action_horizon_s: 2.0
+  max_scene_objects: 8
+  maximum_frame_age_s: 0.5
+  maximum_clock_skew_s: 0.05
+  http:
+    endpoint_url: http://127.0.0.1:8000/v1/chat/completions
+    model_id: local-vlm
+    api_key_env: null
+    max_response_bytes: 1048576
+    max_tokens: 256
+    allow_insecure_http: false
+    structured_output: false
+  vertex:
+    project_env: GOOGLE_CLOUD_PROJECT
+    location: global
+    model_id: gemini-3.5-flash-lite
+    temperature: 0.0
+    max_output_tokens: 256
+    thinking_budget: 0
+  fixture:
+    path: fixtures/vla/providers/synthetic-keep-lane.json
+    repeat_last: false
+
+# What an observation builder assembles each model observation from. These
+# defaults reproduce DriveBench's original observation.
+observation:
+  driving_context: true
+  scene_context: true
+  scene_fields:
+    lanes: true
+    traffic_controls: true
+    objects: true
+
+controller:
+  target_speed_mps: 9.722222222222221
+  # The PID gains and speed_pid_reset_threshold_mps are in configs/pid.yaml, the
+  # one place they are written, nested under controller as they would be here.
+
+planner:
+  route_source: map
+  lookahead_m: 15.0
+  waypoint_spacing_m: 2.0
+  curvature_preview_m: 40.0
+  maximum_lateral_acceleration_mps2: 2.0
+  minimum_curve_speed_mps: 4.0
+  lane_change_enabled: false
+  lane_change_transition_m: 18.0
+  lane_change_timeout_s: 8.0
+  lane_change_completion_tolerance_m: 0.6
+  default_route:
+    - [0.0, 0.0]
+    - [50.0, 0.0]
+    - [100.0, 0.0]
+
+perception:
+  prefer_info: true
+  safety_source: oracle
+  detection_radius_m: 50.0
+  corridor_margin_m: 0.5
+
+safety:
+  enabled: false
+  headway_speed_cap_mode: "off"
+  caution_ttc_s: 3.0
+  emergency_ttc_s: 1.5
+  minimum_gap_m: 3.0
+  minimum_headway_s: 1.5
+  reaction_time_s: 0.5
+  maximum_deceleration_mps2: 6.0
+  stale_after_s: 0.2
+  release_hold_s: 0.3
+  service_brake: 0.5
+
+command_validation:
+  minimum_confidence: 0.5
+  maximum_command_age_s: 2.0
+  maximum_clock_skew_s: 0.25
+  scene_stale_after_s: 0.2
+  maximum_target_speed_mps: 13.88888888888889
+  slow_down_speed_mps: 5.555555555555555
+  yield_speed_mps: 2.7777777777777777
+  lane_change_front_gap_m: 12.0
+  lane_change_rear_gap_m: 10.0
+  lane_change_minimum_ttc_s: 3.0
+
+scenario:
+  stopped_vehicle_ahead_m: null
+  lane_change_hazard:
+    enabled: false
+    distance_ahead_m: 6.0
+    vehicle_kind: car
+  traffic_light:
+    enabled: false
+    distance_m: 38.0
+    visual_scale: 1.75
+    initial_state: red
+    red_duration_s: 12.0
+    green_duration_s: 10.0
+    yellow_duration_s: 2.0
+
+faults: []
+
+event_log:
+  enabled: false
+  path: tmp/events.jsonl
+  scenario_id: default
+
+episode_recording:
+  enabled: false
+  path: tmp/episode-replay

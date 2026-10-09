@@ -1,0 +1,50 @@
+simulator:
+  map: C
+  traffic_density: 0.0
+  obstacle_probability: 0.0
+  num_scenarios: 1
+  start_seed: 0
+  decision_repeat: 5
+  horizon: 400
+  use_lidar: true
+  headless: false
+  manual_control: false
+  out_of_road_done: true
+  crash_vehicle_done: true
+  crash_object_done: true
+
+display:
+  speed_unit: kph
+
+controller:
+  target_speed_mps: 4.166666666666667
+
+planner:
+  route_source: map
+  lookahead_m: 6.0
+  waypoint_spacing_m: 2.0
+  default_route:
+    - [0.0, 0.0]
+    - [50.0, 0.0]
+    - [100.0, 0.0]
+
+perception:
+  prefer_info: true
+  safety_source: oracle
+  detection_radius_m: 50.0
+  corridor_margin_m: 0.5
+
+safety:
+  enabled: true
+  caution_ttc_s: 3.0
+  emergency_ttc_s: 1.5
+  minimum_gap_m: 3.0
+  minimum_headway_s: 1.5
+  reaction_time_s: 0.5
+  maximum_deceleration_mps2: 6.0
+  stale_after_s: 0.2
+  release_hold_s: 0.3
+  service_brake: 0.5
+
+scenario:
+  stopped_vehicle_ahead_m: 100.0

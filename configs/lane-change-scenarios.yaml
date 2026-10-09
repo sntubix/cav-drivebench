@@ -1,0 +1,70 @@
+version: 1
+
+seeds: [0]
+
+scenarios:
+  - id: clear-right-completion
+    map: XTOC
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 160
+    stopped_vehicle_ahead_m: 28.0
+    vla_fixture_path: fixtures/vla/providers/lane-change-right
+    expect:
+      lane_changes_started: 1
+      lane_changes_completed: 1
+      lane_changes_aborted: 0
+      crashed: false
+      went_off_road: false
+
+  - id: left-road-edge-rejection
+    map: S
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 120
+    stopped_vehicle_ahead_m: 28.0
+    vla_fixture_path: fixtures/vla/providers/lane-change-left
+    expect:
+      lane_changes_started: 0
+      lane_changes_completed: 0
+      lane_changes_aborted: 0
+      validations_rejected: 1
+      crashed: false
+      went_off_road: false
+
+  - id: fast-rear-right-rejection
+    map: S
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 120
+    vla_fixture_path: fixtures/vla/providers/lane-change-right
+    vehicles:
+      - id: fast-rear-right
+        longitudinal_offset_m: -18.0
+        lane_offset: 1
+        speed_mps: 12.0
+        kind: car
+    expect:
+      lane_changes_started: 0
+      lane_changes_completed: 0
+      lane_changes_aborted: 0
+      validations_rejected: 1
+      crashed: false
+      went_off_road: false
+
+  - id: target-lane-hazard-abort
+    map: XTOC
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 100
+    vla_fixture_path: fixtures/vla/providers/lane-change-right
+    lane_change_hazard:
+      enabled: true
+      distance_ahead_m: 6.0
+      vehicle_kind: car
+    expect:
+      lane_changes_started: 1
+      lane_changes_completed: 0
+      lane_changes_aborted: 1
+      crashed: false
+      went_off_road: false

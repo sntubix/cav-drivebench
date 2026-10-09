@@ -1,0 +1,21 @@
+# Assignment 1 tuning values.
+#
+# DriveBench applies this file on top of the instructor configuration when you
+# pass --submission; your Controller reads the controller values in `settings`.
+# Write only the keys you change, nested as in configs/default.yaml; the
+# starting gains you tune from are in configs/pid.yaml. Keys the assignment
+# does not permit are rejected; "Your submission" in docs/getting-started.md
+# lists the permitted ones. Better-tuned gains earn driving credit: see
+# "The score" in course/assignment-1/README.md.
+#
+# Print the configuration your runs will use:
+#
+#   uv run metadrive-starter config --submission submission
+#
+# TODO: tune the starting gains here, and measure every change with the gates.
+#
+# Example: more damping on the heading loop.
+#
+# controller:
+#   steering_pid:
+#     kd: 0.1

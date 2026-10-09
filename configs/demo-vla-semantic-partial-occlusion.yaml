@@ -1,0 +1,66 @@
+# A truck stands in the ego lane with a stopped car hidden behind it. The model
+# reports the truck as a low-risk vehicle in front, misses the car, and proposes
+# KEEP_LANE at 8 m/s. The answer is consistent with itself; only comparing the
+# hazards it reports with the measured scene shows the car it left out.
+#
+# The fixture replays that one answer to every request, in any scene, on any GPU.
+# Run it with your arbiter and compare the summary's vla_metrics with a run
+# without --submission, which endorses everything:
+#
+#   uv run metadrive-starter run --config configs/demo-vla-semantic-partial-occlusion.yaml --submission submission
+#
+# Score the same answer open-loop on the matching probe scene:
+#
+#   uv run metadrive-starter probe --config configs/demo-vla-semantic-partial-occlusion.yaml \
+#     --infer --scenario partial-occlusion --output-dir tmp/semantic-partial-occlusion-probe-01
+simulator:
+  map: S
+  traffic_density: 0.0
+  obstacle_probability: 0.0
+  horizon: 200
+  headless: true
+  manual_control: false
+  realtime: false
+
+camera:
+  enabled: true
+  width: 320
+  height: 180
+
+vla:
+  enabled: true
+  provider: fixture
+  action_speed_policy_mode: enforce
+  request_timeout_s: 1.0
+  minimum_interval_s: 0.5
+  action_horizon_s: 2.0
+  fixture:
+    path: fixtures/vla/providers/semantic-failures/partial-occlusion-missed-vehicle.json
+    repeat_last: true
+
+# Assignment 2 drives with lane changes on, so a model's lane change to pass a
+# stopped vehicle executes, under the floor's clearance checks, rather than
+# falling back.
+planner:
+  lane_change_enabled: true
+
+safety:
+  enabled: true
+  headway_speed_cap_mode: "off"
+
+# The partial-occlusion probe scene, placed along the route.
+scenario:
+  stopped_vehicles:
+    - vehicle_id: occluding-truck
+      distance_m: 20.0
+      lateral_m: -0.5
+      kind: truck
+    - vehicle_id: hidden-car
+      distance_m: 30.0
+      lateral_m: 1.2
+      kind: car
+
+event_log:
+  enabled: true
+  path: tmp/demo-vla-semantic-partial-occlusion-events.jsonl
+  scenario_id: semantic-partial-occlusion

@@ -1,0 +1,47 @@
+version: 1
+id: drivebench-race-public-v1
+visibility: public
+
+# Public practice/tuning set. Final evaluation uses paired instructor-only cases,
+# never this exact seed/map/traffic combination.
+runtime:
+  decision_repeat: 5
+  physics_world_step_size: 0.02
+  realtime_factor: 1.0
+
+scenarios:
+  - id: practice-01-straight-clear
+    seed: 1101
+    map: S
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 400
+
+  - id: practice-02-curve-traffic
+    seed: 1102
+    map: C
+    traffic_density: 0.12
+    obstacle_probability: 0.0
+    horizon: 600
+
+  - id: practice-03-intersection-traffic
+    seed: 1103
+    map: X
+    traffic_density: 0.16
+    obstacle_probability: 0.0
+    horizon: 650
+
+  - id: practice-04-stopped-lead
+    seed: 1104
+    map: XTOC
+    traffic_density: 0.0
+    obstacle_probability: 0.0
+    horizon: 900
+    stopped_vehicle_ahead_m: 28.0
+
+  - id: practice-05-mixed-traffic-obstacles
+    seed: 1105
+    map: XTOC
+    traffic_density: 0.2
+    obstacle_probability: 0.08
+    horizon: 1000

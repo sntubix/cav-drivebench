@@ -1,0 +1,29 @@
+simulator:
+  map: XTOC
+  traffic_density: 0.1
+  obstacle_probability: 0.0
+  num_scenarios: 1
+  start_seed: 0
+  decision_repeat: 5
+  horizon: 1000
+  use_lidar: true
+  headless: false
+  manual_control: true
+  out_of_road_done: false
+  crash_vehicle_done: false
+  crash_object_done: false
+
+controller:
+  target_speed_mps: 4.166666666666667
+
+planner:
+  route_source: map
+  lookahead_m: 6.0
+  waypoint_spacing_m: 2.0
+  default_route:
+    - [0.0, 0.0]
+    - [50.0, 0.0]
+    - [100.0, 0.0]
+
+perception:
+  prefer_info: true

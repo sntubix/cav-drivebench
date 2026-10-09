@@ -1,0 +1,47 @@
+[project]
+name = "metadrive-sim-starter"
+version = "0.1.0"
+description = "Runnable MetaDrive simulator starter with CLI, config, control, planning, and perception modules."
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+  "metadrive-simulator==0.4.3",
+  "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+cloud = [
+  "google-auth>=2.30.0",
+  "google-genai>=2.15.0",
+]
+# Exploration notebooks under course/; never needed to run, check, or grade.
+notebooks = [
+  "jupyterlab>=4.0",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+metadrive-starter = "metadrive_starter.cli:main"
+mdsim = "metadrive_starter.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "course/instructor/tests"]
+pythonpath = ["src"]
+addopts = "-q"
+markers = [
+  "instructor: needs course/instructor/, such as the reference controller; skipped without it",
+  "needs(*paths): needs these repository paths, which a student release may hold back; skipped without them",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/metadrive_starter"]
