@@ -2,9 +2,10 @@ version: 1
 id: drivebench-gates-assignment-1-public
 visibility: public
 
-# Every Assignment 1 submission, the shipped stub included, must drive these
-# zero-traffic routes without a crash or off-road exit. Horizons are generous:
-# a gate catches a controller that breaks the run, not one that is merely slow.
+# The public zero-traffic routes. Every one is driven to its end; a route that
+# crashes, leaves the road, or does not arrive within its horizon fails no gate,
+# but earns no driving credit. Horizons are generous: a gate catches a
+# controller that breaks the run, not one that is merely slow.
 # par_steps is the reference controller's time to arrival, which the score's
 # time credit compares against. Instructors grade with hidden scenarios in this
 # same format.

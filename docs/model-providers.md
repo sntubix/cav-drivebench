@@ -2,6 +2,8 @@
 
 [← VLA pipeline and authority](vla-pipeline.md) · [DriveBench README](../README.md) · [Next: Evaluation and replay →](evaluation.md)
 
+You need this guide from Assignment 2 on; Assignment 1 uses none of it.
+
 Run all commands from the repository root unless stated otherwise.
 
 ## Supported provider paths

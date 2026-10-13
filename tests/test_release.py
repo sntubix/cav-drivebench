@@ -365,6 +365,23 @@ def test_a_team_pulls_the_next_release_into_its_own_repository(tmp_path: Path) -
     assert _git(own, "rev-parse", "main") == _git(team, "rev-parse", "HEAD")
 
 
+def test_a_team_without_its_own_repository_pulls_the_next_release(tmp_path: Path) -> None:
+    # The commands docs/getting-started.md gives a team that keeps no repository.
+    repository = _repository(tmp_path / "repository")
+    student = _student_repository(tmp_path / "student")
+    _publish(repository, student)
+    team = tmp_path / "team"
+    _git(tmp_path, "clone", "-q", str(student), str(team))
+    _change(team, "submission/controller.py", "class Controller:\n    pass  # ours\n")
+
+    _change(repository, "src/foundation.py", "VALUE = 2\n")
+    _publish(repository, student)
+    _git(team, "pull", "-q", "--no-rebase", "--no-edit", "origin", "main")
+
+    assert (team / "submission" / "controller.py").read_text().endswith("# ours\n")
+    assert (team / "src" / "foundation.py").read_text() == "VALUE = 2\n"
+
+
 @pytest.mark.parametrize(
     ("name", "text", "problem"),
     [

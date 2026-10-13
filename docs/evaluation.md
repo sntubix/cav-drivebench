@@ -1,6 +1,8 @@
 # Evaluation and replay
 
-[← Model providers](model-providers.md) · [DriveBench README](../README.md) · [Finish: Learning path ↩](../README.md#student-learning-path)
+[← Model providers](model-providers.md) · [DriveBench README](../README.md)
+
+You need this guide from Assignment 2 on; Assignment 1 uses none of it.
 
 Run all commands from the repository root unless stated otherwise.
 
@@ -299,7 +301,7 @@ separate comparison.
 
 </details>
 
-## End of the student path
+## Where to go next
 
-Return to the [README learning path](../README.md#student-learning-path), or use
-the public commands above while working through the assignments.
+Return to the [README](../README.md#start-here), or use the public commands above
+while working through the assignments.

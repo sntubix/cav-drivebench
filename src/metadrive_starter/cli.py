@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import traceback
 from dataclasses import asdict, replace
@@ -469,12 +470,21 @@ def main(argv: list[str] | None = None) -> int:
             select_gate_scenarios(plan, args.scenario_ids)
         except ValueError as exc:
             parser.error(str(exc))
-        report = run_gates(
-            args.submission,
-            plan,
-            base_config=base_config,
-            scenario_ids=args.scenario_ids,
-        )
+        # MetaDrive logs every route it starts; keep only its warnings and
+        # errors, as the PID lab does, so its log never buries the report.
+        # MetaDrive sets its logger's level for every route, so only a filter
+        # holds.
+        metadrive_log = logging.getLogger("MetaDrive")
+        metadrive_log.addFilter(_metadrive_warnings_only)
+        try:
+            report = run_gates(
+                args.submission,
+                plan,
+                base_config=base_config,
+                scenario_ids=args.scenario_ids,
+            )
+        finally:
+            metadrive_log.removeFilter(_metadrive_warnings_only)
         if args.json:
             print(json.dumps(report.to_dict(), indent=2))
         else:
@@ -577,6 +587,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(json.dumps(asdict(summary), indent=2))
     return 0
+
+
+def _metadrive_warnings_only(record: logging.LogRecord) -> bool:
+    return record.levelno >= logging.WARNING
 
 
 def _print_gate_report(report: GateReport) -> None:

@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from metadrive_starter.cloud_preflight import PreflightCheck, VertexPreflightRep
 from metadrive_starter.config import config_from_dict
 from metadrive_starter.events import EventLogger
 from metadrive_starter.evaluation import EvaluationReport
+from metadrive_starter.gates import GateReport, GateResult, GateStatus
 from metadrive_starter.episode_replay import EpisodeReplaySummary, RaceReplaySummary
 from metadrive_starter.race import RaceReport
 from metadrive_starter.provider_fixture_capture import (
@@ -214,6 +216,41 @@ def test_cli_gates_refuse_an_unknown_scenario_before_driving(capsys, tmp_path) -
     assert "unknown gate scenario id: curve; test-gates has straight" in (
         capsys.readouterr().err
     )
+
+
+def test_cli_gates_keep_only_metadrive_warnings_while_driving(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    metadrive_log = logging.getLogger("MetaDrive")
+
+    def logs(level: int) -> bool:
+        record = metadrive_log.makeRecord(
+            "MetaDrive", level, __file__, 0, f"route log at {level}", None, None
+        )
+        return bool(metadrive_log.filter(record))
+
+    kept: dict[str, bool] = {}
+
+    def gates(*args, **kwargs):
+        kept.update(info=logs(logging.INFO), warning=logs(logging.WARNING))
+        return GateReport(
+            plan_id="test-gates",
+            visibility="public",
+            submission="submission",
+            submission_sha256={},
+            results=(GateResult("submission loads", GateStatus.PASSED),),
+        )
+
+    monkeypatch.setattr("metadrive_starter.cli.run_gates", gates)
+    plan = tmp_path / "gates.yaml"
+    plan.write_text(STRAIGHT_GATE_PLAN)
+
+    assert main(["gates", "--manifest", str(plan)]) == 0
+
+    assert kept == {"info": False, "warning": True}
+    assert capsys.readouterr().out.startswith("Structural gates test-gates for submission\n")
+    # Only the gate run is quiet; every other command keeps MetaDrive's log.
+    assert logs(logging.INFO)
 
 
 def test_cli_exposes_demo_overrides(capsys) -> None:

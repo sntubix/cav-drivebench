@@ -1,6 +1,8 @@
 # VLA pipeline and authority
 
-[← Getting started](getting-started.md) · [DriveBench README](../README.md) · [Next: Model providers →](model-providers.md)
+[← DriveBench README](../README.md) · [Next: Model providers →](model-providers.md)
+
+You need this guide from Assignment 2 on; Assignment 1 uses none of it.
 
 Run all commands from the repository root unless stated otherwise.
 
