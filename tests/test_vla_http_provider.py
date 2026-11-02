@@ -482,6 +482,7 @@ def test_http_status_and_json_error_body_are_reported(status: int) -> None:
         500: ModelFailureCategory.TRANSPORT,
     }
     assert raised.value.category is expected[status]
+    assert raised.value.status_code == status
 
 
 @pytest.mark.parametrize("status", [408, 504])
@@ -494,8 +495,10 @@ def test_http_timeout_statuses_are_model_timeouts(status: int) -> None:
         ),
     )
 
-    with pytest.raises(ModelTimeoutError, match=rf"HTTP {status}"):
+    with pytest.raises(ModelTimeoutError, match=rf"HTTP {status}") as raised:
         provider.generate(_request(), timeout_s=1.0)
+
+    assert raised.value.status_code is None
 
 
 def test_response_size_limit_is_enforced_even_for_injected_transport() -> None:

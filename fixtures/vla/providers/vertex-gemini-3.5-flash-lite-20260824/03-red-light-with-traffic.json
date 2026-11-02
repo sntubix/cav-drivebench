@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "vertex-gemini-3.5-flash-lite-20260824-red-light-with-traffic",
+  "source": "sanitized_capture",
+  "prompt_contract_version": "drivebench-vla-assessment-v1",
+  "request_match": {
+    "prompt_sha256": "024c8eac47bfadca33c76bcb223e0b3c63ff7415257e46308fabdbf52f588971",
+    "rgb_sha256": "a84ba424996fcf4250d731e9b73feaada15ad61edea32da96c6c99ecbb9ae18f"
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\n  \"scene_summary\": \"The ego vehicle is approaching an intersection controlled by traffic lights showing red signals ahead.\",\n  \"relevant_hazards\": [\n    {\n      \"type\": \"traffic_control\",\n      \"relative_location\": \"front\",\n      \"risk\": \"high\"\n    },\n    {\n      \"type\": \"vehicle\",\n      \"relative_location\": \"front\",\n      \"risk\": \"medium\"\n    }\n  ],\n  \"meta_action\": \"STOP\",\n  \"target_speed_mps\": 0.0,\n  \"confidence\": 0.98,\n  \"brief_justification\": \"The traffic light ahead is red, requiring the ego vehicle to stop and wait for a green signal.\"\n}",
+    "model_id": "gemini-3.5-flash-lite",
+    "latency_s": 1.595304209011374,
+    "metadata": {
+      "provider": "vertex",
+      "response_id": null,
+      "model_version": "gemini-3.5-flash-lite",
+      "input_tokens": 1967,
+      "output_tokens": 169,
+      "total_tokens": 2136
+    }
+  },
+  "artifact_sha256": "d533f8512fa6602577aad01e26cd65ceff1f2f8bde76528fa3dff238d6ac1656"
+}

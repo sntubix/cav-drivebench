@@ -1,0 +1,49 @@
+{
+  "lanes": {
+    "left": {
+      "available": false,
+      "observed_clear": false
+    },
+    "right": {
+      "available": true,
+      "observed_clear": true
+    }
+  },
+  "objects": [],
+  "traffic_controls": [
+    {
+      "confidence": 1.0,
+      "id": "probe-red-light-with-traffic-traffic-light-0",
+      "in_path": true,
+      "path_distance_m": 37.99954032897949,
+      "relative_position_m": [
+        37.99954032897949,
+        0.0
+      ],
+      "state": "red"
+    },
+    {
+      "confidence": 1.0,
+      "id": "probe-red-light-with-traffic-traffic-light-1",
+      "in_path": false,
+      "path_distance_m": 37.99954032897949,
+      "relative_position_m": [
+        37.99954032897949,
+        -3.5
+      ],
+      "state": "red"
+    },
+    {
+      "confidence": 1.0,
+      "id": "probe-red-light-with-traffic-traffic-light-2",
+      "in_path": false,
+      "path_distance_m": 37.99954032897949,
+      "relative_position_m": [
+        37.99954032897949,
+        -7.0
+      ],
+      "state": "red"
+    }
+  ],
+  "valid": true
+}

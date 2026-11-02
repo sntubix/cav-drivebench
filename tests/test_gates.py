@@ -226,6 +226,14 @@ STATIONARY = WELL_BEHAVED.replace(
     "throttle = self.speed_kp * (tick.target_speed_mps - tick.speed_mps)",
     "throttle = 0.0",
 )
+EXITS_WHILE_CONSTRUCTING = "import sys\n" + WELL_BEHAVED.replace(
+    "        self.speed_kp", "        sys.exit(3)\n        self.speed_kp", 1
+)
+EXITS_WHILE_DRIVING = "import sys\n" + WELL_BEHAVED.replace(
+    "        throttle = self.speed_kp",
+    "        sys.exit(3)\n        throttle = self.speed_kp",
+    1,
+)
 LOADS = "submission loads"
 BOUNDED = "bounded control outputs"
 ROUTE = "route completes"
@@ -240,11 +248,24 @@ RUNS = "no run stops on an error"
             {LOADS: GateStatus.FAILED, BOUNDED: GateStatus.NOT_RUN, RUNS: GateStatus.NOT_RUN},
         ),
         (
+            EXITS_WHILE_CONSTRUCTING,
+            {LOADS: GateStatus.FAILED, BOUNDED: GateStatus.NOT_RUN, RUNS: GateStatus.NOT_RUN},
+        ),
+        (
+            EXITS_WHILE_DRIVING,
+            {LOADS: GateStatus.PASSED, BOUNDED: GateStatus.PASSED, RUNS: GateStatus.FAILED},
+        ),
+        (
             UNSATURATED,
             {LOADS: GateStatus.PASSED, BOUNDED: GateStatus.FAILED, RUNS: GateStatus.PASSED},
         ),
     ],
-    ids=["does-not-load", "unsaturated-throttle"],
+    ids=[
+        "does-not-load",
+        "exits-while-constructing",
+        "exits-while-driving",
+        "unsaturated-throttle",
+    ],
 )
 def test_broken_submission_fails_only_the_relevant_gate(
     tmp_path: Path,
@@ -284,6 +305,53 @@ def test_non_finite_output_fails_bounded_outputs_and_stops_the_route(tmp_path: P
     assert "throttle_brake must be a finite number" in results[BOUNDED].detail
     assert results[RUNS].status is GateStatus.FAILED
     assert "straight: the run stopped" in results[RUNS].detail
+
+
+@pytest.mark.parametrize(
+    "no_score", [None, "Marked from hidden runs."], ids=["scored", "unscored"]
+)
+def test_controller_that_exits_while_driving_fails_the_route_gate_in_a_report(
+    tmp_path: Path,
+    no_score: str | None,
+) -> None:
+    # sys.exit() in team code is an error like any other: the gates report it
+    # rather than end with the team's exit code.
+    submission = _submission(tmp_path / "submission", EXITS_WHILE_DRIVING)
+
+    report = run_gates(
+        submission,
+        replace(_straight_plan(), no_score=no_score),
+        base_config=config_from_dict({}),
+        release_root=tmp_path,
+    )
+
+    results = {result.gate: result for result in report.results}
+    # An error fails the route gate whether or not the plan scores its routes.
+    assert results[RUNS].status is GateStatus.FAILED
+    assert results[RUNS].detail == "straight: the run stopped: SystemExit: 3"
+    if no_score is None:
+        assert report.score is not None
+        assert {check.detail for check in report.score.checks} == {
+            "the controller raised SystemExit: 3"
+        }
+
+
+def test_an_interrupt_while_driving_stops_the_gates(tmp_path: Path) -> None:
+    # Only an operator's interrupt is let through; every other way out fails a gate.
+    source = WELL_BEHAVED.replace(
+        "        throttle = self.speed_kp",
+        "        raise KeyboardInterrupt\n        throttle = self.speed_kp",
+        1,
+    )
+    submission = _submission(tmp_path / "submission", source)
+
+    with pytest.raises(KeyboardInterrupt):
+        run_gates(
+            submission,
+            _straight_plan(),
+            base_config=config_from_dict({}),
+            release_root=tmp_path,
+        )
 
 
 TREE = "nothing outside submission/ was modified"
@@ -418,9 +486,11 @@ def test_route_that_never_completes_costs_its_driving_credit_and_no_gate(
     assert report.score.driving == 0.0
 
 
-def test_route_that_never_completes_fails_the_gate_where_routes_are_not_scored(
+def test_route_that_never_completes_fails_no_gate_where_routes_are_not_scored(
     tmp_path: Path,
 ) -> None:
+    # How the controller drives is never a gate (ADR-0006). Assignment 2 marks no
+    # driving at all, so a route its controller fails there costs nothing.
     submission = _submission(tmp_path / "submission", STATIONARY)
     route = GateScenario(scenario_id="straight", map="S", seed=0, horizon=600)
     plan = GatePlan("unscored", "public", (route,), no_score="Marked from hidden runs.")
@@ -430,10 +500,14 @@ def test_route_that_never_completes_fails_the_gate_where_routes_are_not_scored(
     )
 
     results = {result.gate: result for result in report.results}
-    assert not report.passed
-    assert results[ROUTE].status is GateStatus.FAILED
-    assert results[ROUTE].detail == "straight: did not arrive within 600 steps"
-    assert RUNS not in results
+    assert report.passed
+    assert results[RUNS].status is GateStatus.PASSED
+    assert results[RUNS].detail == (
+        "1 route driven without an error; 1 route did not complete, which this run "
+        "does not score: straight: did not arrive within 600 steps"
+    )
+    assert ROUTE not in results
+    assert report.score is None
 
 
 def test_submission_that_does_not_load_is_not_scored(tmp_path: Path) -> None:
@@ -523,13 +597,14 @@ def _observation_gates(
     *,
     request_timeout_s: float = 1.0,
     arbitration_source: str = ARBITRATION,
+    plan: GatePlan | None = None,
 ) -> dict[str, GateResult]:
     submission = _submission(tmp_path / "submission", WELL_BEHAVED)
     (submission / "observation.py").write_text(observation_source)
     (submission / "arbitration.py").write_text(arbitration_source)
     report = run_gates(
         submission,
-        _short_plan(),
+        plan or _short_plan(),
         base_config=_vla_base(request_timeout_s=request_timeout_s),
         release_root=tmp_path,
     )
@@ -570,17 +645,85 @@ def test_observation_without_the_contract_passes_the_gates_with_a_notice(
     assert results[UNBLOCKED].status is GateStatus.PASSED
 
 
+@pytest.mark.parametrize(
+    ("statement", "problem"),
+    [
+        ("raise RuntimeError('no font')", "build(request) raised RuntimeError: no font"),
+        # sys.exit() on the deadline thread is reported as a raise, never swallowed.
+        ("import sys; sys.exit(3)", "build(request) raised SystemExit: 3"),
+    ],
+    ids=["raises", "exits"],
+)
 @pytest.mark.needs("fixtures")
-def test_observation_that_raises_fails_the_valid_observation_gate(tmp_path: Path) -> None:
+def test_observation_that_raises_or_exits_fails_the_valid_observation_gate(
+    tmp_path: Path,
+    statement: str,
+    problem: str,
+) -> None:
     source = OBSERVATION.replace(
         "        return Observation(",
-        "        raise RuntimeError('no font')\n        return Observation(",
+        f"        {statement}\n        return Observation(",
     )
 
     results = _observation_gates(tmp_path, source)
 
     assert results[VALID].status is GateStatus.FAILED
-    assert "build(request) raised RuntimeError: no font" in results[VALID].detail
+    assert f"could not be sent; the first: {problem}" in results[VALID].detail
+    # The vehicle drove on without the model rather than stopping the run.
+    assert "the run stopped" not in results[RUNS].detail
+
+
+QWEN = "drivebench-qwen3-vl-2b-q4-k-m"
+SMOLVLM = "drivebench-smolvlm-256m-q8-0"
+
+
+@pytest.mark.needs("fixtures")
+def test_each_request_is_also_built_for_every_model_the_plan_marks(tmp_path: Path) -> None:
+    plan = replace(_short_plan(), observation_models=(QWEN, SMOLVLM))
+
+    results = _observation_gates(tmp_path, OBSERVATION, plan=plan)
+
+    assert results[VALID].status is GateStatus.PASSED
+    assert f"every request also for {QWEN}, {SMOLVLM}, each with a valid frame" in (
+        results[VALID].detail
+    )
+
+
+@pytest.mark.needs("fixtures")
+def test_an_observation_that_fails_only_for_one_model_fails_the_gate(tmp_path: Path) -> None:
+    # The drive answers from a recording, so only the extra build reaches this branch.
+    source = OBSERVATION.replace(
+        "        return Observation(",
+        "        if request.model_id == "
+        f"{SMOLVLM!r}:\n            raise RuntimeError('no prompt yet')\n"
+        "        return Observation(",
+    )
+
+    assert _observation_gates(tmp_path, source)[VALID].status is GateStatus.PASSED
+    marked = tmp_path / "marked"
+    marked.mkdir()
+    results = _observation_gates(
+        marked, source, plan=replace(_short_plan(), observation_models=(SMOLVLM,))
+    )
+
+    assert results[VALID].status is GateStatus.FAILED
+    assert f"build(request) for {SMOLVLM} raised RuntimeError: no prompt yet" in (
+        results[VALID].detail
+    )
+    assert "the run stopped" not in results[RUNS].detail
+
+
+def test_assignment_2_gates_build_for_the_models_its_profiles_name() -> None:
+    plan = load_gate_plan(PROJECT_ROOT / "configs" / "gates-assignment-2.yaml")
+    named = {
+        load_config(PROJECT_ROOT / "configs" / name).vla.http.model_id
+        for name in (
+            "vla-probe-qwen3-vl-2b-llama-structured.yaml",
+            "vla-probe-smolvlm-llama-structured.yaml",
+        )
+    }
+
+    assert set(plan.observation_models) == named
 
 
 @pytest.mark.needs("fixtures")
@@ -616,12 +759,13 @@ def test_observation_that_outlasts_the_request_timeout_is_abandoned_and_fails(
     ("constructor", "message"),
     [
         ("raise ValueError('bad settings')", "raised ValueError: bad settings"),
+        ("import sys; sys.exit(3)", "ObservationBuilder(settings) raised SystemExit: 3"),
         (
             "import time; time.sleep(30.0)",
             "ObservationBuilder(settings) had not returned after 0.2 s, the request timeout",
         ),
     ],
-    ids=["raises", "hangs"],
+    ids=["raises", "exits", "hangs"],
 )
 def test_observation_builder_that_cannot_be_built_fails_to_load(
     tmp_path: Path,
@@ -667,6 +811,7 @@ def _arbiter(answer: str, keep: str = "True") -> str:
     """An arbiter whose arbitrate returns ``answer`` and whose review returns
     ``keep``, both expressions in ``request``."""
     return (
+        "import sys\n"
         "from dataclasses import replace\n"
         "from metadrive_starter.vla import ArbitrationError, HighLevelAction\n"
         "def refuse(message):\n"
@@ -722,6 +867,9 @@ def test_arbiter_within_the_proposal_passes_the_model_gates(
         # The gates' own refusal is an ArbitrationError too; a team's never passes for one.
         ("refuse('no')", "True", "arbitrate(request) raised ArbitrationError: no"),
         ("request.assessment", "None", "review(request) must return True or False; got None"),
+        # sys.exit() on the deadline thread is reported as a raise, never swallowed.
+        ("sys.exit(3)", "True", "arbitrate(request) raised SystemExit: 3"),
+        ("request.assessment", "sys.exit(3)", "review(request) raised SystemExit: 3"),
     ],
     ids=[
         "faster",
@@ -730,6 +878,8 @@ def test_arbiter_within_the_proposal_passes_the_model_gates(
         "raises",
         "raises-arbitration-error",
         "review-without-answer",
+        "exits",
+        "review-exits",
     ],
 )
 @pytest.mark.needs("fixtures")
@@ -747,6 +897,23 @@ def test_arbiter_beyond_the_proposal_fails_the_monotone_gate_and_the_run_drives_
     # DriveBench declined each such answer itself rather than stopping the run.
     assert "the run stopped" not in results[RUNS].detail
     assert results[UNBLOCKED].status is GateStatus.PASSED
+
+
+@pytest.mark.needs("fixtures")
+def test_arbiter_that_exits_on_a_new_episode_stops_the_run_in_a_report(tmp_path: Path) -> None:
+    # An exception from begin_episode() stops the run (ADR-0004), and so does an
+    # exit, named as such rather than as a call that never answered.
+    source = ARBITRATION.replace(
+        "    def begin_episode(self):\n        pass\n",
+        "    def begin_episode(self):\n        import sys; sys.exit(3)\n",
+    )
+
+    results = _arbitration_gates(tmp_path, source)
+
+    assert results[RUNS].status is GateStatus.FAILED
+    assert results[RUNS].detail == (
+        "straight: the run stopped: ArbitrationError: begin_episode() raised SystemExit: 3"
+    )
 
 
 @pytest.mark.needs("fixtures")
@@ -778,12 +945,13 @@ def test_arbiter_that_outlasts_the_control_step_is_abandoned_and_fails(
     ("constructor", "message"),
     [
         ("raise ValueError('bad settings')", "raised ValueError: bad settings"),
+        ("import sys; sys.exit(3)", "Arbiter(settings) raised SystemExit: 3"),
         (
             "import time; time.sleep(30.0)",
             "Arbiter(settings) had not returned after 0.2 s, the request timeout",
         ),
     ],
-    ids=["raises", "hangs"],
+    ids=["raises", "exits", "hangs"],
 )
 def test_arbiter_that_cannot_be_built_fails_to_load(
     tmp_path: Path,
@@ -852,7 +1020,8 @@ def test_public_assignment_2_gates_add_one_fault_scenario_per_kind_to_the_routes
         for route in assignment_1.scenarios
     ]
     # Assignment 1's score would mean nothing under Assignment 2, so there is no par.
-    assert plan.no_score is not None and "course/assignment-2/rubric.md" in plan.no_score
+    assert plan.no_score is not None
+    assert '"How you are marked" in course/assignment-2/README.md' in plan.no_score
     assert all(route.par_steps is None for route in routes)
     assert sorted(fault.kind for scenario in faulted for fault in scenario.faults) == sorted(
         FaultKind
@@ -967,8 +1136,7 @@ def test_a_fault_scenario_is_judged_apart_from_the_routes_and_the_score(
     results = {result.gate: result for result in report.results}
     assert results[FAULTS_SURVIVED].status is GateStatus.PASSED
     assert results[FAULTS_SURVIVED].detail == (
-        "1 fault scenario driven without a crash, an off-road exit, or a stopped run, "
-        "under camera_dropout"
+        "1 fault scenario driven without a stopped run, under camera_dropout"
     )
     # The route gate and the score see only the route; the fault scenario need not arrive.
     assert results[RUNS].detail == (
@@ -986,12 +1154,28 @@ FULL_LOCK = WELL_BEHAVED.replace(
 
 
 @pytest.mark.needs("fixtures")
-def test_a_fault_scenario_that_leaves_the_road_fails_the_fault_gate(tmp_path: Path) -> None:
+def test_a_fault_scenario_that_leaves_the_road_fails_no_gate(tmp_path: Path) -> None:
+    # Leaving the road is the controller's driving, which no gate judges (ADR-0006);
+    # the report still says it happened.
     report = _fault_gates(tmp_path, FULL_LOCK)
 
     results = {result.gate: result for result in report.results}
+    assert results[FAULTS_SURVIVED].status is GateStatus.PASSED
+    assert results[FAULTS_SURVIVED].detail == (
+        "1 fault scenario driven without a stopped run, under camera_dropout; "
+        "1 fault scenario crashed or left the road, which fails no gate: "
+        "camera-dark: left the road"
+    )
+
+
+@pytest.mark.needs("fixtures")
+def test_a_fault_scenario_an_error_stops_fails_the_fault_gate(tmp_path: Path) -> None:
+    report = _fault_gates(tmp_path, EXITS_WHILE_DRIVING)
+
+    results = {result.gate: result for result in report.results}
+    assert not report.passed
     assert results[FAULTS_SURVIVED].status is GateStatus.FAILED
-    assert results[FAULTS_SURVIVED].detail == "camera-dark: left the road"
+    assert results[FAULTS_SURVIVED].detail == "camera-dark: the run stopped: SystemExit: 3"
 
 
 def test_a_run_of_routes_alone_does_not_run_the_fault_gate(tmp_path: Path) -> None:

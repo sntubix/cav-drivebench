@@ -229,6 +229,50 @@ def test_releases_refuse_withheld_material_and_credentials(
     assert not (tmp_path / "dist").exists()
 
 
+def test_a_public_scene_may_repeat_what_a_recorded_hidden_scene_measured(
+    tmp_path: Path,
+) -> None:
+    # Every empty road with the same lanes measures the same scene.json.
+    measured = '{"objects": [], "valid": true}\n'
+    repository = _repository(
+        tmp_path / "repository",
+        {
+            f"course/instructor/probes/hidden/empty/{name}": measured
+            for name in ("scene.json", "local_scene.json")
+        }
+        | {
+            f"fixtures/vla/probes/public/empty/{name}": measured
+            for name in ("scene.json", "local_scene.json")
+        },
+    )
+
+    student = _unpack(build_releases(repository, tmp_path / "dist").student, tmp_path / "unpacked")
+
+    assert (student / "fixtures/vla/probes/public/empty/scene.json").read_text() == measured
+
+
+@pytest.mark.parametrize(
+    "withheld",
+    [
+        # The truth beside a recorded scene is withheld, whatever its name says.
+        "course/instructor/probes/hidden/empty/truth.json",
+        "course/instructor/probes/hidden/empty/frame.png",
+        # Only the recorded scenes are exempt.
+        "course/instructor/perception-study/scene.json",
+    ],
+)
+def test_a_copy_of_anything_else_of_a_recorded_scene_is_still_refused(
+    tmp_path: Path, withheld: str
+) -> None:
+    copied = '{"objects": [{"id": "pedestrian"}]}\n'
+    repository = _repository(
+        tmp_path / "repository", {withheld: copied, "fixtures/vla/probes/public/copy.json": copied}
+    )
+
+    with pytest.raises(ReleaseError, match=f"copy.json is a copy of {withheld}"):
+        build_releases(repository, tmp_path / "dist")
+
+
 def test_student_release_names_a_missing_revision(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository")
 

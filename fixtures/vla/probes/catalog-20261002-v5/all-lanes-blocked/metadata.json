@@ -1,0 +1,81 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "0c98c8f48cda5408f4b36670e70ae070b48025e8817684e412c499b01cd2720d",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "fabd6d04a352201c18d1294b39f90c344f74e5bddba38fcb623af21e3c7ba6bf",
+    "rgb_sha256": "0780c6c476f8b6a79e64aecf0397e3853435b193b3eeb6a9cdc5f58254394adc",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "ebf3dc54e17a34cc3b53384219028713e466f74078214517c946fc46b658750c",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-all-lanes-blocked-seed-0"
+  },
+  "scenario": {
+    "description": "Stopped vehicles block the ego lane and every lane to its right.",
+    "evaluation": {
+      "acceptable_actions": [
+        "FOLLOW",
+        "STOP"
+      ],
+      "maximum_target_speed_mps": 5.555555555555555,
+      "minimum_target_speed_mps": 0.0,
+      "raw_speed_required": false,
+      "required_hazards": [
+        {
+          "relative_location": "front",
+          "type": "vehicle"
+        },
+        {
+          "relative_location": "front_right",
+          "type": "vehicle"
+        }
+      ]
+    },
+    "expected_visual": "A stopped car is ahead in the ego lane and a stopped car occupies each lane to its right.",
+    "id": "all-lanes-blocked",
+    "map": "S",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": [
+      {
+        "distance_m": 22.0,
+        "id": "stopped-lead",
+        "kind": "car",
+        "lane_offset": 0,
+        "lateral_m": 0.0
+      },
+      {
+        "distance_m": 16.0,
+        "id": "right-lane-blocker",
+        "kind": "car",
+        "lane_offset": 1,
+        "lateral_m": 0.0
+      },
+      {
+        "distance_m": 19.0,
+        "id": "far-right-lane-blocker",
+        "kind": "car",
+        "lane_offset": 2,
+        "lateral_m": 0.0
+      }
+    ]
+  },
+  "schema_version": 4
+}

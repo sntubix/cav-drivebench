@@ -44,12 +44,15 @@ from metadrive_starter.vla import (
     VLA_PROMPT_CONTRACT_VERSION,
     build_vla_scene_context,
     checked_observation,
-    decode_vla_assessment,
     encode_rgb_frame_png,
+    withhold_scene,
 )
 
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9_-]*\Z")
+# Scene speed bounds are kilometres per hour converted to m/s, so a speed the model
+# writes from the same conversion can differ in its last digit; this absorbs that.
+TARGET_SPEED_TOLERANCE_MPS = 1e-6
 _MANIFEST_SCHEMA_VERSION = 2
 _SUPPORTED_MANIFEST_SCHEMA_VERSIONS = {1, _MANIFEST_SCHEMA_VERSION}
 # Version 4 saves whatever observation was sent, so its prompt may hold the scene
@@ -149,6 +152,14 @@ class ProbeEvaluationSpec:
             raise ValueError("probe evaluation required_hazards must be unique")
         if not isinstance(self.raw_speed_required, bool):
             raise ValueError("probe evaluation raw_speed_required must be a boolean")
+
+    def accepts_target_speed(self, speed_mps: float) -> bool:
+        """Whether a target speed is within this scene's range, to float noise."""
+        return (
+            self.minimum_target_speed_mps - TARGET_SPEED_TOLERANCE_MPS
+            <= speed_mps
+            <= self.maximum_target_speed_mps + TARGET_SPEED_TOLERANCE_MPS
+        )
 
 
 @dataclass(frozen=True)
@@ -464,6 +475,12 @@ def replay_vla_probe_artifacts(
         target.mkdir()
         source = available[scenario_id]
         recorder = _RecordingModelProvider(provider)
+        # Only the request is saved; the response checks are the live pipeline's.
+        pipeline = VLAInferencePipeline(
+            recorder,
+            timeout_s=config.vla.request_timeout_s,
+            action_horizon_s=config.vla.action_horizon_s,
+        )
         semantic_passed: bool | None = None
         evaluation_defined = False
         metadata: dict[str, object] = {
@@ -502,14 +519,11 @@ def replay_vla_probe_artifacts(
             (target / "prompt.txt").write_text(prompt, encoding="utf-8")
             if scene_bytes is not None:
                 (target / "scene.json").write_bytes(scene_bytes)
-            response = recorder.generate(request, timeout_s=config.vla.request_timeout_s)
+            inference = pipeline.send(request)
+            response = inference.response
+            assessment = inference.assessment
+            command = inference.requested_command
             (target / "raw_response.txt").write_text(response.text, encoding="utf-8")
-            assessment = decode_vla_assessment(response.text)
-            command = assessment.to_command(
-                command_id=request.request_id,
-                issued_at_s=request.created_at_s,
-                action_horizon_s=config.vla.action_horizon_s,
-            )
 
             semantic_evaluation = _evaluate_assessment(scenario.evaluation, assessment)
             semantic_passed = (
@@ -675,16 +689,19 @@ def _write_probe_artifacts(
     observation_builder: ObservationBuilder,
 ) -> ProbeScenarioResult:
     request_id = f"probe-{scenario.scenario_id}-seed-{scenario.seed}"
+    withheld = config.vla.request_scene_fields.withheld
     observation_request = ObservationRequest(
         frame=capture.frame,
         now_s=capture.timestamp_s,
         action_horizon_s=config.vla.action_horizon_s,
         contract=OUTPUT_CONTRACT,
-        scene=capture.scene,
+        scene=withhold_scene(capture.scene, withheld),
         ego_speed_mps=capture.ego_speed_mps,
         cruise_speed_mps=config.controller.target_speed_mps,
         max_scene_objects=config.vla.max_scene_objects,
         prompt_policy=config.vla.prompt_policy,
+        model_id=config.vla.requested_model_id,
+        withheld=withheld,
     )
     # Built once and saved exactly as the model receives it.
     observation = checked_observation(
@@ -758,6 +775,8 @@ def _write_probe_artifacts(
         maximum_clock_skew_s=config.vla.maximum_clock_skew_s,
         prompt_policy=config.vla.prompt_policy,
         observation_builder=_SavedObservation(observation),
+        model_id=config.vla.requested_model_id,
+        withheld_scene_fields=withheld,
     )
     try:
         inference = pipeline.infer(
@@ -857,7 +876,9 @@ class _RecordingModelProvider:
     def generate(self, request: ModelRequest, *, timeout_s: float) -> ModelResponse:
         self.request = request
         response = self.provider.generate(request, timeout_s=timeout_s)
-        self.response = response
+        # Anything else is no evidence to keep; the pipeline rejects it.
+        if isinstance(response, ModelResponse):
+            self.response = response
         return response
 
 
@@ -1338,11 +1359,7 @@ def _evaluate_assessment(
     if evaluation is None:
         return None
     tactical_action_passed = assessment.proposed_action in evaluation.acceptable_actions
-    raw_speed_passed = (
-        evaluation.minimum_target_speed_mps
-        <= assessment.proposed_target_speed_mps
-        <= evaluation.maximum_target_speed_mps
-    )
+    raw_speed_passed = evaluation.accepts_target_speed(assessment.proposed_target_speed_mps)
     observed_hazards = {
         (hazard.hazard_type, hazard.relative_location)
         for hazard in assessment.relevant_hazards

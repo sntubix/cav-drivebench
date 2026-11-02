@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.02603090554482922,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "2e6b2ee47a824d998946e4c39e0139e3137a1b791e95b1f171560f38863ebb3f",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "a41eb303fcd51c42b56dc76a94e2ab01e18dd64a7325705580683af209822acc",
+    "rgb_sha256": "83a69afa9ae9f9e3d6d633380d0d60cef480c5bf7857342bef2f912c6084ea5b",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "e5bccaa8b1f4516500933f5e82a0eea4f10d4c1736ceb2ad0c506a2cd4e55022",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-public-single-pedestrian-right-19m-seed-6"
+  },
+  "scenario": {
+    "description": "Placed on the route: a pedestrian 19 m ahead in the right lane.",
+    "evaluation": null,
+    "expected_visual": "See truth.json for each placed object and whether it is in view.",
+    "id": "public-single-pedestrian-right-19m",
+    "map": "SS",
+    "seed": 6,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 4
+}

@@ -177,6 +177,28 @@ def test_cli_gates_report_a_submission_that_does_not_load(capsys, tmp_path) -> N
     assert report["score"] is None
 
 
+def test_cli_gates_report_a_controller_that_exits_while_driving(capsys, tmp_path) -> None:
+    # The team's sys.exit() fails a gate: the run still ends in a report, with
+    # the gates' exit code rather than the team's.
+    source = "import sys\n" + SATURATED_CONTROLLER.replace(
+        "        throttle = self.kp", "        sys.exit(3)\n        throttle = self.kp", 1
+    )
+    submission = _write_controller(tmp_path, source)
+    plan = tmp_path / "gates.yaml"
+    plan.write_text(STRAIGHT_GATE_PLAN)
+
+    assert main(
+        ["gates", "--submission", str(submission), "--manifest", str(plan), "--json"]
+    ) == 1
+
+    report = json.loads(capsys.readouterr().out)
+    results = {result["gate"]: result for result in report["results"]}
+    assert results["no run stops on an error"]["status"] == "failed"
+    assert results["no run stops on an error"]["detail"] == (
+        "straight: the run stopped: SystemExit: 3"
+    )
+
+
 def test_cli_gates_mark_a_run_of_selected_scenarios_partial(capsys, tmp_path) -> None:
     submission = _write_controller(tmp_path, SATURATED_CONTROLLER)
     plan = tmp_path / "gates.yaml"

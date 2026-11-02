@@ -1,0 +1,36 @@
+{
+  "distance_to_left_boundary_m": 5.25,
+  "distance_to_right_boundary_m": 5.25,
+  "ego_length_m": 4.515,
+  "ego_speed_mps": 0.02603090554482922,
+  "ego_width_m": 1.852,
+  "heading_error_rad": 0.0,
+  "lane_offset_m": 0.0,
+  "left_lane_available": true,
+  "objects": [
+    {
+      "confidence": 1.0,
+      "in_path": true,
+      "kind": "traffic_barrier",
+      "lane_relation": "crossing",
+      "length_m": 2.0,
+      "object_id": "study-public-single-barrier-ego-24m-a",
+      "path_cross_track_m": -9.632110595703125e-05,
+      "path_distance_m": 23.999502182006836,
+      "path_relative_velocity_mps": -0.02441690140403807,
+      "relative_position_m": [
+        23.999502182006836,
+        -9.632110595703125e-05
+      ],
+      "relative_velocity_mps": [
+        -0.02441690140403807,
+        0.008997933430592298
+      ],
+      "width_m": 0.3
+    }
+  ],
+  "right_lane_available": true,
+  "timestamp_s": 0.1,
+  "traffic_lights": [],
+  "valid": true
+}

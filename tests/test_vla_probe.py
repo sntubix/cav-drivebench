@@ -9,9 +9,12 @@ from metadrive_starter import vla_probe
 from metadrive_starter.cli import main
 from metadrive_starter.config import config_from_dict
 from metadrive_starter.perception import LaneRelation, LocalScene, TrackedObject
+from metadrive_starter.recorded_probes import INTERPRETATION_CATALOG
 from metadrive_starter.vla import (
     HazardType,
     HighLevelAction,
+    ModelRequest,
+    ModelResponse,
     Observation,
     ObservationRequest,
     RGBFrame,
@@ -282,7 +285,13 @@ def test_inference_probe_keeps_raw_response_when_command_decoding_fails(tmp_path
 
 @pytest.mark.parametrize(
     ("target_speed_mps", "expected"),
-    [(8.333333333333334, True), (0.0, False)],
+    [
+        (8.333333333333334, True),
+        (0.0, False),
+        # 35 km/h converted another way: past the bound only in its last digit.
+        (9.7222222222222224, True),
+        (9.7232, False),
+    ],
 )
 def test_inference_probe_reports_semantic_rubric_separately(
     tmp_path: Path,
@@ -562,6 +571,68 @@ def test_probe_replay_keeps_provider_evidence_when_response_is_malformed(
     assert metadata["replay"]["exact_scene_context"] is True
 
 
+class _MisaddressedProvider:
+    """Answers well, but for another request."""
+
+    def generate(self, request: ModelRequest, *, timeout_s: float) -> ModelResponse:
+        del timeout_s
+        return ModelResponse(
+            request_id=f"{request.request_id}-other",
+            text=json.dumps(
+                {
+                    "scene_summary": "Clear road.",
+                    "relevant_hazards": [],
+                    "meta_action": "KEEP_LANE",
+                    "target_speed_mps": 30.0,
+                    "confidence": 0.9,
+                    "brief_justification": "Continue safely.",
+                }
+            ),
+            model_id="misaddressed-model",
+            latency_s=0.0,
+        )
+
+
+class _UntypedProvider:
+    """Answers with something that is not a ModelResponse."""
+
+    def generate(self, request: ModelRequest, *, timeout_s: float) -> object:
+        del request, timeout_s
+        return "KEEP_LANE"
+
+
+@pytest.mark.parametrize(
+    ("provider", "error_category"),
+    [
+        (_MisaddressedProvider(), "VLAInferenceError"),
+        (_UntypedProvider(), "ModelProviderError"),
+    ],
+)
+def test_probe_replay_checks_the_response_as_the_live_pipeline_does(
+    tmp_path: Path,
+    provider: object,
+    error_category: str,
+) -> None:
+    config = config_from_dict({})
+    source = tmp_path / "source"
+    run_vla_probe_catalog(config, [_scenario()], source, capture=_capture)
+
+    summary = replay_vla_probe_artifacts(
+        config,
+        source,
+        tmp_path / "replay",
+        provider=provider,  # type: ignore[arg-type]
+    )
+
+    metadata = json.loads(
+        (tmp_path / "replay" / "clear-road" / "metadata.json").read_text()
+    )
+    assert summary.successful is False
+    assert summary.scenarios[0].error_category == error_category
+    assert metadata["outcome"]["error_category"] == error_category
+    assert "parsed_command" not in metadata["outcome"]
+
+
 def test_probe_replay_rejects_tampered_saved_png_before_inference(tmp_path: Path) -> None:
     config = config_from_dict({})
     source = tmp_path / "source"
@@ -673,6 +744,27 @@ def test_probe_saves_and_sends_the_team_observation(tmp_path: Path) -> None:
     assert (metadata["capture"]["width"], metadata["capture"]["height"]) == (1, 1)
     # The measured scene is kept beside the observation even when the prompt omits it.
     assert json.loads((artifact_dir / "scene.json").read_text())["objects"][0]["id"] == "lead"
+
+
+def test_probe_builds_the_team_observation_for_the_configured_model(tmp_path: Path) -> None:
+    models: list[str | None] = []
+
+    class Recording(_TeamObservation):
+        def build(self, request: ObservationRequest) -> Observation:
+            models.append(request.model_id)
+            return super().build(request)
+
+    config = config_from_dict({"vla": {"http": {"model_id": "drivebench-smolvlm-256m-q8-0"}}})
+
+    run_vla_probe_catalog(
+        config,
+        [_scenario()],
+        tmp_path / "probe",
+        capture=_capture,
+        observation_builder=Recording(),
+    )
+
+    assert models == ["drivebench-smolvlm-256m-q8-0"]
 
 
 def test_replay_sends_a_saved_team_observation_unchanged(tmp_path: Path) -> None:
@@ -791,20 +883,71 @@ def test_cli_probe_builds_observations_with_the_submission(
     assert prompt.endswith("\nTeam policy.")
 
 
-def test_cli_probe_replay_refuses_a_submission(
+def test_cli_probe_replay_with_a_submission_needs_a_recorded_catalog(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
+    # Plain probe output keeps no measured scene to build an observation from.
+    saved = tmp_path / "probe"
+    scene = saved / "clear-road"
+    scene.mkdir(parents=True)
+    (scene / "metadata.json").write_text("{}")
+    team = tmp_path / "team"
+    team.mkdir()
+    (team / "observation.py").write_text(TEAM_OBSERVATION)
+
     with pytest.raises(SystemExit):
         main(
             [
                 "probe",
+                "--config",
+                str(PROJECT_ROOT / "configs" / "demo-vla-semantic-stopped-vehicle.yaml"),
                 "--infer",
                 "--replay-from",
-                str(tmp_path),
+                str(saved),
                 "--submission",
-                str(tmp_path),
+                str(team),
             ]
         )
 
-    assert "--submission applies only when capturing" in capsys.readouterr().err
+    assert "--replay-from with --submission" in capsys.readouterr().err
+
+
+@pytest.mark.needs("fixtures")
+def test_cli_probe_replay_builds_a_recorded_scene_with_the_submission(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def no_rendering(*_arguments: object) -> None:
+        raise AssertionError("a recorded scene is never rendered")
+
+    monkeypatch.setattr(vla_probe, "capture_probe_scenario", no_rendering)
+    team = tmp_path / "team"
+    team.mkdir()
+    (team / "observation.py").write_text(TEAM_OBSERVATION)
+
+    status = main(
+        [
+            "probe",
+            "--config",
+            str(PROJECT_ROOT / "configs" / "demo-vla-semantic-stopped-vehicle.yaml"),
+            "--infer",
+            "--replay-from",
+            str(INTERPRETATION_CATALOG),
+            "--scenario",
+            "public-single-cone-left-13m",
+            "--submission",
+            str(team),
+            "--output-dir",
+            str(tmp_path / "probe"),
+        ]
+    )
+
+    assert status == 0, capsys.readouterr().err
+    scene = tmp_path / "probe" / "public-single-cone-left-13m"
+    # The team's observation was sent, not the prompt saved with the scene.
+    assert (scene / "prompt.txt").read_text().startswith("Team observation.\n")
+    metadata = json.loads((scene / "metadata.json").read_text())
+    assert metadata["capture"]["observation_builder"].endswith("ObservationBuilder")
+    assert metadata["outcome"]["status"] == "success"

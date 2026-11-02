@@ -1,3 +1,6 @@
+# Demos and plumbing checks only. MLX checkpoints are not the pinned model files,
+# so figures from this profile do not predict Assignment 2's marks; do marked work
+# on the pinned llama-server (docs/model-providers.md).
 camera:
   enabled: true
   width: 512
@@ -15,7 +18,8 @@ vla:
     observed_clear=false means that side is occupied. Never propose a lane change
     into a lane when available=false or observed_clear=false.
   provider: http
-  maximum_requests_per_run: 2
+  # No request cap: the server is local. The Vertex profile keeps one as a spend rail.
+  maximum_requests_per_run: null
   request_timeout_s: 60.0
   action_horizon_s: 2.0
   max_scene_objects: 8

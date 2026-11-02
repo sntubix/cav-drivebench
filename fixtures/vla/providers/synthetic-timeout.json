@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "fixture_id": "synthetic-timeout",
+  "source": "synthetic",
+  "prompt_contract_version": "drivebench-vla-assessment-v5",
+  "request_match": {
+    "prompt_sha256": null,
+    "rgb_sha256": null
+  },
+  "outcome": {
+    "type": "failure",
+    "category": "timeout",
+    "message": "synthetic provider deadline exceeded"
+  },
+  "artifact_sha256": "096369dab1aee86ca1a71bb925941bf3ae9ae77ea19de220902a733ad39898e1"
+}

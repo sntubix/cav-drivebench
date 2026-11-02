@@ -1,0 +1,69 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "c87db1c89ddf636c365482336d85848779ead088f96e8e70c4ea24d469029559",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "04bfa3e628ffab924a56cee6ad7d538837f9687ed0404f8c8a0abdda6e2bffa5",
+    "rgb_sha256": "958a7d94206ecb4974dcda9e61a42b9dc48a93797330f835a501312e42c6feec",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "308c5f0a1e77161ee6fe49b4d272a75b6ebd5c4083704d127efb474cd739b6ef",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-partial-occlusion-seed-0"
+  },
+  "scenario": {
+    "description": "A stopped truck partially obscures a more distant stopped car in the ego lane, with the adjacent right lane clear.",
+    "evaluation": {
+      "acceptable_actions": [
+        "CHANGE_LANE_RIGHT"
+      ],
+      "maximum_target_speed_mps": 5.555555555555555,
+      "minimum_target_speed_mps": 2.7777777777777777,
+      "raw_speed_required": false,
+      "required_hazards": [
+        {
+          "relative_location": "front",
+          "type": "vehicle"
+        }
+      ]
+    },
+    "expected_visual": "The nearer truck dominates the ego lane while part of the farther hazard remains visible.",
+    "id": "partial-occlusion",
+    "map": "S",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": [
+      {
+        "distance_m": 20.0,
+        "id": "occluding-truck",
+        "kind": "truck",
+        "lane_offset": 0,
+        "lateral_m": -0.5
+      },
+      {
+        "distance_m": 30.0,
+        "id": "hidden-car",
+        "kind": "car",
+        "lane_offset": 0,
+        "lateral_m": 1.2
+      }
+    ]
+  },
+  "schema_version": 4
+}

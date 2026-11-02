@@ -77,8 +77,8 @@ def test_executor_uses_effective_not_requested_speed() -> None:
     assert execution.target_speed_mps == pytest.approx(20.0 / 3.6)
 
 
-def test_executor_can_enforce_locally_mapped_keep_lane_speed() -> None:
-    decision = _decision(HighLevelAction.KEEP_LANE, target_speed_mps=0.0)
+def test_executor_can_enforce_locally_mapped_slow_down_speed() -> None:
+    decision = _decision(HighLevelAction.SLOW_DOWN, target_speed_mps=9.0)
     policy = ActionSpeedPolicy(
         "enforce",
         cruise_speed_mps=10.0,
@@ -91,10 +91,33 @@ def test_executor_can_enforce_locally_mapped_keep_lane_speed() -> None:
         action_speed_policy=policy,
     ).execute(decision, now_s=1.0)
 
-    assert execution.target_speed_mps == 10.0
+    assert execution.target_speed_mps == 5.0
     assert execution.action_speed is not None
-    assert execution.action_speed.requested_target_speed_mps == 0.0
+    # The executor's own SLOW_DOWN cap, 20 km/h, applies first; the policy then
+    # lowers that to the course's slow-down speed.
+    assert execution.action_speed.requested_target_speed_mps == pytest.approx(20.0 / 3.6)
     assert execution.action_speed.applied is True
+
+
+def test_executor_keeps_a_speed_the_arbiter_or_floor_lowered() -> None:
+    # KEEP_LANE maps to the cruise speed, but a validated command at 1 m/s has
+    # been lowered on purpose, and the policy may never raise it.
+    decision = _decision(HighLevelAction.KEEP_LANE, target_speed_mps=1.0)
+    policy = ActionSpeedPolicy(
+        "enforce",
+        cruise_speed_mps=10.0,
+        slow_down_speed_mps=5.0,
+        yield_speed_mps=2.0,
+    )
+
+    execution = VLACommandExecutor(
+        10.0,
+        action_speed_policy=policy,
+    ).execute(decision, now_s=1.0)
+
+    assert execution.target_speed_mps == 1.0
+    assert execution.action_speed is not None
+    assert execution.action_speed.applied is False
 
 
 @pytest.mark.parametrize(

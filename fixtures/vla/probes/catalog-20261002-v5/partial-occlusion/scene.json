@@ -1,0 +1,36 @@
+{
+  "lanes": {
+    "left": {
+      "available": false,
+      "observed_clear": false
+    },
+    "right": {
+      "available": true,
+      "observed_clear": true
+    }
+  },
+  "objects": [
+    {
+      "confidence": 1.0,
+      "distance_m": 20.0,
+      "estimated_speed_mps": 0.0,
+      "id": "probe-partial-occlusion-occluding-truck",
+      "in_path": true,
+      "kind": "vehicle",
+      "relative_location": "front",
+      "relative_speed_mps": -0.026
+    },
+    {
+      "confidence": 1.0,
+      "distance_m": 30.0,
+      "estimated_speed_mps": 0.006,
+      "id": "probe-partial-occlusion-hidden-car",
+      "in_path": true,
+      "kind": "vehicle",
+      "relative_location": "front",
+      "relative_speed_mps": -0.02
+    }
+  ],
+  "traffic_controls": [],
+  "valid": true
+}

@@ -389,9 +389,35 @@ def spawn_static_vehicle_ahead(
         spawn_kwargs,
     )
     obstacle.set_velocity([0.0, 0.0])
+    if vehicle_kind == "truck":
+        # MetaDrive spawns a vehicle at half its box height and lets its suspension
+        # settle it, which a static truck never does: its wheels would hang 0.7 m
+        # above the road. Static cars keep MetaDrive's height, which is already this
+        # one give or take a centimetre.
+        obstacle.set_position(obstacle.position, height=_wheels_down_origin_height_m(obstacle))
     obstacle.set_static(True)
     _record_post_reset_scenario_object(env, obstacle, vehicle_type, spawn_kwargs)
     return obstacle
+
+
+# Keeps a static vehicle's wheel rays off the road: a ray that touches it pushes on
+# the static body and gives it a velocity the measured scene would report.
+_STATIC_WHEEL_CLEARANCE_M = 0.01
+
+
+def _wheels_down_origin_height_m(vehicle: Any) -> float:
+    """Origin height at which a vehicle's unloaded wheels hang just above a flat road.
+
+    The body sits 6-7 cm above where a moving vehicle's suspension settles it,
+    as a static car's does.
+    """
+    wheel = vehicle.system.getWheel(0)
+    return (
+        float(wheel.getSuspensionRestLength())
+        + float(wheel.getWheelRadius())
+        - float(wheel.getChassisConnectionPointCs().z)
+        + _STATIC_WHEEL_CLEARANCE_M
+    )
 
 
 def spawn_scenario_vehicle(env: Any, settings: ScenarioVehicleSettings) -> Any:

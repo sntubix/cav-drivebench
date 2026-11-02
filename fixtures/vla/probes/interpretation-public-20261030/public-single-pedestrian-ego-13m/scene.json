@@ -1,0 +1,26 @@
+{
+  "lanes": {
+    "left": {
+      "available": true,
+      "observed_clear": true
+    },
+    "right": {
+      "available": true,
+      "observed_clear": true
+    }
+  },
+  "objects": [
+    {
+      "confidence": 1.0,
+      "distance_m": 13.0,
+      "estimated_speed_mps": 0.0,
+      "id": "study-public-single-pedestrian-ego-13m-a",
+      "in_path": true,
+      "kind": "pedestrian",
+      "relative_location": "front",
+      "relative_speed_mps": -0.026
+    }
+  ],
+  "traffic_controls": [],
+  "valid": true
+}

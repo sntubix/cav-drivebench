@@ -627,7 +627,24 @@ def _run_live_simulation(
     try:
         observation, info = env.reset()
         if config.scenario.stopped_vehicle_ahead_m is not None:
-            spawn_stopped_vehicle_ahead(env, config.scenario.stopped_vehicle_ahead_m)
+            actor = spawn_stopped_vehicle_ahead(
+                env,
+                config.scenario.stopped_vehicle_ahead_m,
+            )
+            _event(
+                event_logger,
+                "scenario_vehicle_spawned",
+                sim_time_s=0.0,
+                payload={
+                    "object_id": str(actor.id),
+                    "vehicle_id": "stopped-vehicle",
+                    "distance_m": config.scenario.stopped_vehicle_ahead_m,
+                    "lane_offset": 0,
+                    "lateral_m": 0.0,
+                    "speed_mps": 0.0,
+                    "kind": "car",
+                },
+            )
         for stopped in config.scenario.stopped_vehicles:
             actor = spawn_static_vehicle_ahead(
                 env,
@@ -939,6 +956,9 @@ def _run_live_simulation(
                         clearance_reason=clearance_reason,
                     )
                     forced_abort_reason: str | None = None
+                    # Every decision this tick passed through, so that a start the
+                    # route forces into an abort is still counted and logged.
+                    lane_change_decisions = [lane_change_decision]
                     if lane_change_decision.phase is LaneChangePhase.STARTED:
                         assert lane_change_decision.source_lane_index is not None
                         assert lane_change_decision.target_lane_index is not None
@@ -962,6 +982,7 @@ def _run_live_simulation(
                                 now_s=now_s,
                                 reason=forced_abort_reason,
                             )
+                            lane_change_decisions.append(lane_change_decision)
                             route = navigation_waypoints(
                                 env,
                                 config.planner.waypoint_spacing_m,
@@ -990,31 +1011,31 @@ def _run_live_simulation(
                         "forced_abort_reason": forced_abort_reason,
                     }
 
-                    if lane_change_decision.phase is not LaneChangePhase.IDLE:
+                    for transition in lane_change_decisions:
                         lane_changes_started += int(
-                            lane_change_decision.phase is LaneChangePhase.STARTED
+                            transition.phase is LaneChangePhase.STARTED
                         )
                         lane_changes_completed += int(
-                            lane_change_decision.phase is LaneChangePhase.COMPLETED
+                            transition.phase is LaneChangePhase.COMPLETED
                         )
                         lane_changes_aborted += int(
-                            lane_change_decision.phase is LaneChangePhase.ABORTED
+                            transition.phase is LaneChangePhase.ABORTED
                         )
-                    if lane_change_decision.phase in {
-                        LaneChangePhase.STARTED,
-                        LaneChangePhase.COMPLETED,
-                        LaneChangePhase.ABORTED,
-                        LaneChangePhase.REJECTED,
-                    }:
-                        _event(
-                            event_logger,
-                            "lane_change_transition",
-                            sim_time_s=now_s,
-                            payload={
-                                "decision": lane_change_decision,
-                                "context": lane_change_context,
-                            },
-                        )
+                        if transition.phase in {
+                            LaneChangePhase.STARTED,
+                            LaneChangePhase.COMPLETED,
+                            LaneChangePhase.ABORTED,
+                            LaneChangePhase.REJECTED,
+                        }:
+                            _event(
+                                event_logger,
+                                "lane_change_transition",
+                                sim_time_s=now_s,
+                                payload={
+                                    "decision": transition,
+                                    "context": lane_change_context,
+                                },
+                            )
 
                 plan = planner.plan(frame)
                 requested_target_speed_mps = target_speed_mps

@@ -1,0 +1,26 @@
+{
+  "lanes": {
+    "left": {
+      "available": true,
+      "observed_clear": false
+    },
+    "right": {
+      "available": true,
+      "observed_clear": true
+    }
+  },
+  "objects": [
+    {
+      "confidence": 1.0,
+      "distance_m": 11.0,
+      "estimated_speed_mps": 0.0,
+      "id": "study-public-bend-pedestrian-left-11m-a",
+      "in_path": false,
+      "kind": "pedestrian",
+      "relative_location": "front_left",
+      "relative_speed_mps": -0.026
+    }
+  ],
+  "traffic_controls": [],
+  "valid": true
+}

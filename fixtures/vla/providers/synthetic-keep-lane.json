@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "synthetic-keep-lane",
+  "source": "synthetic",
+  "prompt_contract_version": "drivebench-vla-assessment-v5",
+  "request_match": {
+    "prompt_sha256": null,
+    "rgb_sha256": null
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\"scene_summary\":\"Synthetic clear road.\",\"relevant_hazards\":[],\"meta_action\":\"KEEP_LANE\",\"target_speed_mps\":8.0,\"confidence\":0.9,\"brief_justification\":\"No synthetic hazards.\"}",
+    "model_id": "synthetic-fixture-model",
+    "latency_s": 0.125,
+    "metadata": {
+      "provider": "synthetic_fixture",
+      "response_id": "synthetic-response-keep-lane-1",
+      "model_version": "synthetic-v1",
+      "input_tokens": 128,
+      "output_tokens": 48,
+      "total_tokens": 176
+    }
+  },
+  "artifact_sha256": "f1bcab570fbd88a919366cd602898e567d39b58294cf3a17ed302579ed5084f5"
+}

@@ -190,13 +190,14 @@ def test_missing_controller_file_names_the_file_and_its_entry_point(
             """,
             SyntaxError,
         ),
+        ("import sys\nsys.exit(3)", SystemExit),
     ],
-    ids=["missing-import", "syntax-error"],
+    ids=["missing-import", "syntax-error", "exits"],
 )
 def test_controller_that_fails_to_import_reports_the_original_error(
     tmp_path: Path,
     source: str,
-    error: type[Exception],
+    error: type[BaseException],
 ) -> None:
     submission = _submission(tmp_path, source)
 
@@ -264,6 +265,45 @@ def test_controller_that_fails_to_construct_reports_the_original_error(
     ) as raised:
         factory(config_from_dict({}).controller)
     assert isinstance(raised.value.__cause__, AttributeError)
+
+
+def test_controller_that_exits_while_constructing_fails_to_load(tmp_path: Path) -> None:
+    factory = load_controller(
+        _submission(
+            tmp_path,
+            """
+            import sys
+
+            class Controller:
+                def __init__(self, settings):
+                    sys.exit(3)
+            """,
+        )
+    )
+
+    with pytest.raises(
+        SubmissionError, match=r"Controller\(settings\) raised SystemExit: 3"
+    ) as raised:
+        factory(config_from_dict({}).controller)
+    assert isinstance(raised.value.__cause__, SystemExit)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "raise KeyboardInterrupt\n",
+        """
+        class Controller:
+            def __init__(self, settings):
+                raise KeyboardInterrupt
+        """,
+    ],
+    ids=["importing", "constructing"],
+)
+def test_an_interrupt_while_loading_stops_the_run(tmp_path: Path, source: str) -> None:
+    # Only an operator's interrupt is let through; every other way out fails the load.
+    with pytest.raises(KeyboardInterrupt):
+        load_controller(_submission(tmp_path, source))(config_from_dict({}).controller)
 
 
 def test_loading_a_submission_writes_nothing_into_its_directory(

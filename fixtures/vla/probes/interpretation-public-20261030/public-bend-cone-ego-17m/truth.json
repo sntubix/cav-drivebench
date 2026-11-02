@@ -1,0 +1,51 @@
+{
+  "id": "public-bend-cone-ego-17m",
+  "group": "geometry",
+  "map": "CS",
+  "seed": 6,
+  "spawn_longitude_m": 30.0,
+  "tags": {
+    "geometry": "bend"
+  },
+  "timestamp_s": 0.1,
+  "ego_speed_mps": 0.026031019166116675,
+  "ego_lane": 1,
+  "lane_count": 3,
+  "left_lane_available": true,
+  "right_lane_available": true,
+  "lens_fov_deg": [
+    60.0,
+    35.9833984375
+  ],
+  "width": 512,
+  "height": 288,
+  "png_sha256": "c6cb9472b863c93ed44d59e0175a821ad802f74efe0d296e94cda43fc073e9ee",
+  "objects": [
+    {
+      "id": "a",
+      "spec": {
+        "id": "a",
+        "kind": "cone",
+        "distance_m": 17.0,
+        "lane_offset": 0
+      },
+      "measured": true,
+      "object_id": "study-public-bend-cone-ego-17m-a",
+      "kind": "traffic_cone",
+      "hazard_type": "obstacle",
+      "relative_location": "front",
+      "distance_m": 16.999,
+      "forward_m": 17.0,
+      "left_m": 0.0,
+      "in_path": true,
+      "lane_relation": "same",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        256.0,
+        177.5
+      ]
+    }
+  ],
+  "unexpected_objects": []
+}

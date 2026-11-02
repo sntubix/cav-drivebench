@@ -4,6 +4,7 @@ import math
 import sys
 import warnings
 from dataclasses import dataclass
+from typing import Iterable
 
 from metadrive_starter.perception import LocalScene
 from metadrive_starter.timing import (
@@ -15,6 +16,7 @@ from metadrive_starter.vla.camera import RGBFrame
 from metadrive_starter.vla.commands import VLACommand
 from metadrive_starter.vla.observation import (
     OUTPUT_CONTRACT,
+    SCENE_FIELDS,
     ObservationBuilder,
     ObservationRequest,
     OutputContractWarning,
@@ -22,7 +24,7 @@ from metadrive_starter.vla.observation import (
     describe_missing_contract,
     missing_contract_lines,
 )
-from metadrive_starter.vla.prompting import DefaultObservationBuilder
+from metadrive_starter.vla.prompting import DefaultObservationBuilder, withhold_scene
 from metadrive_starter.vla.provider import (
     ModelFailureCategory,
     ModelProvider,
@@ -68,6 +70,8 @@ class VLAInferencePipeline:
         maximum_clock_skew_s: float = 0.05,
         prompt_policy: str = "",
         observation_builder: ObservationBuilder | None = None,
+        model_id: str | None = None,
+        withheld_scene_fields: Iterable[str] = (),
     ) -> None:
         if not isinstance(provider, ModelProvider):
             raise TypeError("provider must implement ModelProvider.generate()")
@@ -85,6 +89,11 @@ class VLAInferencePipeline:
             or max_scene_objects < 0
         ):
             raise ValueError("max_scene_objects must be a non-negative integer")
+        if model_id is not None and (not isinstance(model_id, str) or not model_id.strip()):
+            raise ValueError("model_id must be a non-empty string or None")
+        withheld = frozenset(withheld_scene_fields)
+        if not withheld <= set(SCENE_FIELDS):
+            raise ValueError(f"withheld_scene_fields must name only {', '.join(SCENE_FIELDS)}")
         if observation_builder is None:
             observation_builder = DefaultObservationBuilder()
         elif not isinstance(observation_builder, ObservationBuilder):
@@ -97,6 +106,10 @@ class VLAInferencePipeline:
         self.maximum_clock_skew_s = float(maximum_clock_skew_s)
         self.prompt_policy = prompt_policy
         self.observation_builder = observation_builder
+        # Named in every observation request, so a builder can suit its model.
+        self.model_id = model_id
+        # Measured-scene fields no observation request carries (ADR-0008).
+        self.withheld_scene_fields = withheld
         # Every observation built, and those sent without every output-contract line.
         self.observations_built = 0
         self.observations_without_contract = 0
@@ -120,11 +133,13 @@ class VLAInferencePipeline:
             now_s=now_s,
             action_horizon_s=self.action_horizon_s,
             contract=OUTPUT_CONTRACT,
-            scene=scene,
+            scene=withhold_scene(scene, self.withheld_scene_fields),
             ego_speed_mps=ego_speed_mps,
             cruise_speed_mps=cruise_speed_mps,
             max_scene_objects=self.max_scene_objects,
             prompt_policy=self.prompt_policy,
+            model_id=self.model_id,
+            withheld=self.withheld_scene_fields,
         )
         # The model receives exactly the observation built here, or nothing.
         observation = checked_observation(
@@ -148,6 +163,16 @@ class VLAInferencePipeline:
             episode_id=episode_id,
             generation_id=generation_id,
         )
+        return self.send(request)
+
+    def send(self, request: ModelRequest) -> VLAInferenceResult:
+        """Send one built request and decode the response once it passes every check.
+
+        Probe replay sends saved requests through here too, so a replayed response
+        meets the same checks as a live one.
+        """
+        if not isinstance(request, ModelRequest):
+            raise ValueError("request must be a ModelRequest")
         response = self.provider.generate(request, timeout_s=self.timeout_s)
         if not isinstance(response, ModelResponse):
             raise ModelProviderError("model provider returned an invalid response type")
@@ -157,7 +182,7 @@ class VLAInferencePipeline:
         assessment = decode_vla_assessment(response.text)
         command = assessment.to_command(
             command_id=request.request_id,
-            issued_at_s=now_value,
+            issued_at_s=request.created_at_s,
             action_horizon_s=self.action_horizon_s,
         )
         return VLAInferenceResult(

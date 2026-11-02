@@ -3,7 +3,15 @@ id: drivebench-gates-assignment-2-public
 visibility: public
 no_score: >-
   Assignment 2 is marked from hidden runs with the pinned model, never from
-  this run; see course/assignment-2/rubric.md.
+  this run; see "How you are marked" in course/assignment-2/README.md.
+
+# The models Assignment 2's observation is marked on, as their configurations
+# name them. The drives answer from a recording, so each request is built once
+# more for each model, with request.model_id naming it, and every one must be an
+# observation that can be sent.
+observation_models:
+  - drivebench-qwen3-vl-2b-q4-k-m
+  - drivebench-smolvlm-256m-q8-0
 
 # Assignment 2 drives the Assignment 1 routes with the model asked, so it needs a
 # base configuration that enables vla:
@@ -15,9 +23,8 @@ no_score: >-
 # Assignment 2 is marked from hidden runs.
 #
 # Fault scenarios inject one published fault kind each, by simulation step. A
-# fault scenario need not arrive: it is judged only on whether a fault crashed the
-# vehicle, sent it off the road, or stopped the run. Instructors grade with other
-# timings, maps, and combinations.
+# fault scenario need not arrive: it is judged only on whether the run stopped on
+# an error. Instructors grade with other timings, maps, and combinations.
 scenarios:
   - id: straight
     map: S

@@ -1,0 +1,56 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "27806144840d70d2577dc87c5536c72958edcdc7f581faa7e7ee4f435eb1a9da",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "d9359b4831f1ce64aa525d38e095ad82ab1a81e7e94c0251172b14293d930050",
+    "rgb_sha256": "07855b93c4b9a49713a6ed722a37eeec93a0b801dbcb90dcc5f16473989c6022",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "2d62c28d939daf18b162b1212e3a7249d63ec93d7b99f94661a13271e68b11d3",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-intersection-seed-0"
+  },
+  "scenario": {
+    "description": "Clear four-way intersection without generated traffic.",
+    "evaluation": {
+      "acceptable_actions": [
+        "KEEP_LANE",
+        "SLOW_DOWN",
+        "YIELD"
+      ],
+      "maximum_target_speed_mps": 8.333333333333334,
+      "minimum_target_speed_mps": 2.7777777777777777,
+      "raw_speed_required": false,
+      "required_hazards": [
+        {
+          "relative_location": "front",
+          "type": "road_feature"
+        }
+      ]
+    },
+    "expected_visual": "Intersection geometry and multiple possible road continuations are visible.",
+    "id": "intersection",
+    "map": "X",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 4
+}

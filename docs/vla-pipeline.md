@@ -165,8 +165,11 @@ supplemental safety facts. Behavioural instructions come from
 and response limits.
 
 The image and prompt together are the observation, and an `ObservationBuilder`
-assembles it from an `ObservationRequest`: the captured frame, the scene, the
-speeds, and the configured values. Runs under `--submission` build it with the
+assembles it from an `ObservationRequest`: the captured frame, the measured
+scene, less the fields the instructor withholds, which `request.withheld` names,
+the speeds, the configured values, and `model_id`, the model the request goes to
+(`vla.http.model_id` or `vla.vertex.model_id`, or none for recorded answers).
+Runs under `--submission` build it with the
 team's `observation.py`; everything else, runs without `--submission`
 included, uses `DefaultObservationBuilder`, which is `build_vla_prompt` on the
 captured frame. The pipeline refuses only a malformed observation, such as a
@@ -223,18 +226,69 @@ An older worker may finish, but identity checks turn it into an auditable
 
 ## Request budgets and pacing
 
+The closed loop asks the model as often as it can answer. The scheduler holds
+one request at a time, never queues a frame, and refuses a new request within
+`vla.minimum_interval_s` of the last one starting, 0.5 s of simulated time by
+default. Each control tick offers a frame, and the runtime captures one only
+when the scheduler could take it, so a tick while a request is out costs no
+render; the run summary counts those ticks in `vla_metrics.submissions_busy`
+and `submissions_rate_limited`. Nothing samples on a timer: the next request
+goes out on the tick the last answer arrives, so a faster model is asked more
+often, and the loop's period is the model's latency.
+
+Whether the model holds authority without gaps follows from that latency in
+simulated time, `L`, the wall-clock latency times the realtime factor:
+
+- the safety floor accepts an answer when `L` is within
+  `command_validation.maximum_command_age_s`, 2 s by default, and refuses a
+  later one as stale;
+- an accepted command holds authority for `vla.action_horizon_s` from its
+  frame, and the next answer arrives `2L` after that frame, so authority is
+  continuous when `L` is at most half the horizon;
+- `vla.maximum_frame_age_s` compares the frame's timestamp with the request's.
+  The runtime captures and submits a frame on one tick, so under it the limit
+  guards the pipeline's other callers, never the loop's pacing.
+
+Measured with the pinned Qwen3-VL-2B under `llama-server` on a laptop without a
+discrete GPU, where an answer takes about 4 wall seconds, under the model demos'
+3 s horizon ([`configs/demo-vla-qwen3-vl-2b-llama.yaml`](../configs/demo-vla-qwen3-vl-2b-llama.yaml)):
+
+| Realtime factor | `L` | The floor | Authority |
+| --- | --- | --- | --- |
+| 0.25 | 1.0 s | accepts every answer | continuous, with a second to spare |
+| 0.5 | 2.0 s | accepts answers at the limit, refuses those just over it | gaps of about a second between commands |
+| 1.0 | 4.0 s | refuses every answer as stale | none |
+
+On a GPU, where an answer takes about a second, the same drive holds continuous
+authority at full speed. The Assignment 2 brief's "Choosing a realtime factor"
+turns this into a recipe. Pacing never changes simulation timestamps, command
+age, action horizon, PID time step, or fault timing: `simulator.realtime` and
+`realtime_factor` change only how old each answer is when it arrives.
+
 `vla.maximum_requests_per_run` bounds provider attempts across the complete run.
+It is for metered providers: the Vertex profiles carry one as a spend rail, and
+the cloud capture plans its requests against one. A local server costs
+wall-clock time only, so no local-server profile carries one. The deterministic
+lane-change suite is the one fixture profile with a cap: its fixture holds two
+recorded answers, and a cap of two keeps later ticks from asking past them.
 The budget is consumed immediately before dispatch, so provider success, error,
 and timeout all count; camera failures, rate-limited frames, and pre-provider
-faults do not. Episode changes do not reset it.
+faults do not. Episode changes do not reset it. When the cap is exhausted, the
+runtime stops capturing new model frames, emits one exhaustion event, lets
+existing authority expire, and continues with local fallback and safety. Run
+summaries record attempted and remaining requests.
 
-When the cap is exhausted, the runtime stops capturing new model frames, emits
-one exhaustion event, lets existing authority expire, and continues with local
-fallback and safety. Run summaries record attempted and remaining requests.
+## What a live run is for
 
-Real-time pacing is independent. Use `simulator.realtime: true` and a suitable
-`realtime_factor` whenever model latency matters. Pacing never changes simulation
-timestamps, command age, action horizon, PID time step, or fault timing.
+Assignment 2's marks come from the open-loop probe on fixed hidden scenes: each
+observation is built once, sent once, and its answer scored against the scene
+it was captured in, as the brief's "How you are marked" states. The hidden
+structural gates drive with a recorded answer and only pass or fail. No
+Assignment 2 mark is taken from a live closed-loop run. A live run is for
+exploration and demonstration: an observation and arbiter driving with the
+model answering live, and an arbiter meeting answers that arrive as late as the
+model takes, with the floor refusing the stale ones. It is also the base the
+course builds on once when to ask, and what asking costs, become the task.
 
 ## Local scene and continuous safety
 
@@ -255,12 +309,16 @@ not steer around obstacles.
 
 ## Action-speed and headway policies
 
-The model proposes a raw target speed, but local action semantics can map that
-proposal to a course-owned speed. `vla.action_speed_policy_mode` supports:
+The model proposes a raw target speed, but local action semantics give each
+action a course-owned speed, a ceiling that the proposal may not exceed: the
+cruise speed for `KEEP_LANE`, `FOLLOW`, and a lane change, the configured
+`SLOW_DOWN` and `YIELD` speeds, and 0 for `STOP`. The policy only ever lowers a
+speed, so a speed an arbiter lowered or the safety floor capped stands.
+`vla.action_speed_policy_mode` supports:
 
-- `enforce`: apply the mapped speed;
-- `shadow`: record what would have changed while preserving the model speed;
-- `off`: preserve the model speed and report no intervention.
+- `enforce`: apply the ceiling where the validated speed exceeds it;
+- `shadow`: record where it would have applied while preserving the speed;
+- `off`: preserve the speed and report no intervention.
 
 The independent headway-speed cap has the same `enforce`, `shadow`, and `off`
 modes. It computes a route-aware speed ceiling from lead gap, lead speed,

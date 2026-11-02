@@ -136,6 +136,41 @@ def test_scheduler_is_single_flight_and_does_not_queue_frames() -> None:
         scheduler.close()
 
 
+def test_would_reject_answers_as_submit_would_without_taking_the_slot() -> None:
+    provider = BlockingProvider()
+    scheduler = VLAInferenceScheduler(
+        VLAInferencePipeline(provider),
+        minimum_interval_s=1.0,
+    )
+    try:
+        assert scheduler.would_reject(now_s=10.0) is None
+        assert scheduler.has_outstanding_inference is False
+        assert (
+            scheduler.submit(_frame(10.0), now_s=10.0, request_id="first")
+            is InferenceSubmitDisposition.STARTED
+        )
+        assert provider.started.wait(timeout=1.0)
+        assert scheduler.would_reject(now_s=10.5) is InferenceSubmitDisposition.BUSY
+
+        provider.release.set()
+        assert provider.finished.wait(timeout=1.0)
+        # The slot stays taken until the completion is collected.
+        assert scheduler.would_reject(now_s=12.0) is InferenceSubmitDisposition.BUSY
+        assert isinstance(_await_completion(scheduler), InferenceSuccess)
+        assert (
+            scheduler.would_reject(now_s=10.5)
+            is InferenceSubmitDisposition.RATE_LIMITED
+        )
+        assert scheduler.would_reject(now_s=11.0) is None
+        assert scheduler.has_outstanding_inference is False
+        with pytest.raises(ValueError):
+            scheduler.would_reject(now_s=-1.0)
+    finally:
+        provider.release.set()
+        scheduler.close()
+    assert scheduler.would_reject(now_s=11.0) is InferenceSubmitDisposition.CLOSED
+
+
 def test_uncollected_completion_keeps_the_bounded_slot_busy() -> None:
     provider = BlockingProvider()
     scheduler = VLAInferenceScheduler(
@@ -345,6 +380,10 @@ def test_request_cap_stops_new_work_and_survives_episode_changes() -> None:
         assert isinstance(_await_completion(scheduler), InferenceSuccess)
         assert budget.used_requests == 1
         assert scheduler.request_cap_exhausted is True
+        assert (
+            scheduler.would_reject(now_s=2.0)
+            is InferenceSubmitDisposition.REQUEST_CAP_EXHAUSTED
+        )
         assert (
             scheduler.submit(_frame(2.0), now_s=2.0, request_id="blocked")
             is InferenceSubmitDisposition.REQUEST_CAP_EXHAUSTED

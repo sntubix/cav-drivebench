@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026031019166116675,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "c6cb9472b863c93ed44d59e0175a821ad802f74efe0d296e94cda43fc073e9ee",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "86363e36bce0b489fbd9927a3cf8770bf1a0e359f9d2147793be81f2069d71bc",
+    "rgb_sha256": "be52aad78d7c971be7fb0681c3fd780593c1d66518c3509653f0a42c7309ef5e",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "83324595b434f01a7ebd96e030bcf67c2f9057341342725fe2a5a0423138dddb",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-public-bend-cone-ego-17m-seed-6"
+  },
+  "scenario": {
+    "description": "Placed on the route: a cone 17 m ahead in the ego lane.",
+    "evaluation": null,
+    "expected_visual": "See truth.json for each placed object and whether it is in view.",
+    "id": "public-bend-cone-ego-17m",
+    "map": "CS",
+    "seed": 6,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 4
+}

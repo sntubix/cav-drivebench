@@ -31,9 +31,12 @@ class ModelProviderError(RuntimeError):
         message: str,
         *,
         category: ModelFailureCategory = ModelFailureCategory.TRANSPORT,
+        status_code: int | None = None,
     ) -> None:
         super().__init__(message)
         self.category = category
+        # The endpoint's HTTP status, when it answered with one.
+        self.status_code = status_code
 
 
 class ModelTimeoutError(ModelProviderError, TimeoutError):

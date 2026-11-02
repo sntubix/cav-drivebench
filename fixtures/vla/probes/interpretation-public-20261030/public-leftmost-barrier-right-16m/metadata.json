@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "0773f9accb0a5fe3e3f81489e0d6ed629b73d0aee36493fa89a97bb93112f8ea",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "044ba04f95232d93fa71075d09a3f0d88667b09856bc2b6ebb4fb5d844fb1507",
+    "rgb_sha256": "eb1fc4847232e536416bca64f93203a84a8b138b1caaa59943fcf2153aa56411",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "4c76e32dc2ac0f57d1f596524a383c4f150f5fe5e3fbc706755826962ae39779",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-public-leftmost-barrier-right-16m-seed-2"
+  },
+  "scenario": {
+    "description": "Placed on the route: a barrier 16 m ahead in the right lane.",
+    "evaluation": null,
+    "expected_visual": "See truth.json for each placed object and whether it is in view.",
+    "id": "public-leftmost-barrier-right-16m",
+    "map": "SS",
+    "seed": 2,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 4
+}

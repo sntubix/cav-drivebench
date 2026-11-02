@@ -1,0 +1,56 @@
+{
+  "distance_to_left_boundary_m": 1.75,
+  "distance_to_right_boundary_m": 8.75,
+  "ego_length_m": 4.515,
+  "ego_speed_mps": 0.026030905544757843,
+  "ego_width_m": 1.852,
+  "heading_error_rad": 0.0,
+  "lane_offset_m": 0.0,
+  "left_lane_available": false,
+  "objects": [
+    {
+      "confidence": 1.0,
+      "in_path": true,
+      "kind": "vehicle",
+      "lane_relation": "crossing",
+      "length_m": 5.74,
+      "object_id": "probe-partial-occlusion-occluding-truck",
+      "path_cross_track_m": 0.5,
+      "path_distance_m": 19.999540328979492,
+      "path_relative_velocity_mps": -0.026030905544757843,
+      "relative_position_m": [
+        19.999540328979492,
+        0.5
+      ],
+      "relative_velocity_mps": [
+        -0.026030905544757843,
+        0.0
+      ],
+      "width_m": 2.3
+    },
+    {
+      "confidence": 1.0,
+      "in_path": true,
+      "kind": "vehicle",
+      "lane_relation": "crossing",
+      "length_m": 4.515,
+      "object_id": "probe-partial-occlusion-hidden-car",
+      "path_cross_track_m": -1.1999998092651367,
+      "path_distance_m": 29.999540328979492,
+      "path_relative_velocity_mps": -0.020430694334208965,
+      "relative_position_m": [
+        29.999540328979492,
+        -1.1999998092651367
+      ],
+      "relative_velocity_mps": [
+        -0.020430694334208965,
+        0.0
+      ],
+      "width_m": 1.852
+    }
+  ],
+  "right_lane_available": true,
+  "timestamp_s": 0.1,
+  "traffic_lights": [],
+  "valid": true
+}

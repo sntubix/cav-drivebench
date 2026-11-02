@@ -1,0 +1,20 @@
+Prompt contract: drivebench-vla-assessment-v5
+You are assessing a driving scene and proposing one high-level manoeuvre.
+The attached front-camera image is the PRIMARY evidence for the driving decision.
+LOCAL_SCENE_CONTEXT contains measured tactical facts. For lane availability, observed occupancy, distance, and relative speed, follow it when visual interpretation is ambiguous.
+Allowed actions (exact strings only): KEEP_LANE, FOLLOW, SLOW_DOWN, STOP, YIELD, CHANGE_LANE_LEFT, CHANGE_LANE_RIGHT, REQUEST_FALLBACK
+Required output fields: scene_summary, relevant_hazards, meta_action, target_speed_mps, confidence, brief_justification.
+Each relevant_hazards item must contain type, relative_location, and risk. Allowed types: vehicle, pedestrian, obstacle, road_feature, traffic_control, other.
+Return at most 4 relevant hazards. Mention each observed object at most once.
+Allowed relative locations: front, front_left, front_right, left, right, rear, rear_left, rear_right. Allowed risks: low, medium, high.
+DRIVING_CONTEXT reports the measured ego speed and the desired clear-road cruise speed in m/s. target_speed_mps is the commanded speed for the next action horizon, not a copy of the current ego speed.
+CONFIGURED_POLICY:
+On a clear lane, prefer the cruise speed. Reduce target speed for visible hazards, uncertainty, road geometry, or traffic controls; use 0 only when a full stop is intended. Maintain safe forward progress. When the image shows a stationary vehicle blocking the current lane and LOCAL_SCENE_CONTEXT shows an adjacent lane available and observed clear, prefer changing into that lane over stopping or following. In LOCAL_SCENE_CONTEXT, observed_clear=false means that side is occupied. Never propose a lane change into a lane when available=false or observed_clear=false.
+Propose a manoeuvre for the next 3.0 seconds. The runtime owns request IDs, timestamps, and command validity; do not return those fields.
+target_speed_mps must be non-negative; confidence must be between 0 and 1.
+scene_summary and brief_justification must each contain at most 256 characters. Be concise and do not repeat.
+Return exactly one JSON object with the required fields, with no Markdown fences or prose.
+DRIVING_CONTEXT:
+{"cruise_speed_mps":9.722222222222221,"ego_speed_mps":0.026030905544757843}
+LOCAL_SCENE_CONTEXT:
+{"lanes":{"left":{"available":false},"right":{"available":true}},"valid":true}

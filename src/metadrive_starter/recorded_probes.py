@@ -34,6 +34,7 @@ from metadrive_starter.submission import PROJECT_ROOT
 from metadrive_starter.timing import times_equal
 from metadrive_starter.vla.camera import RGBFrame
 from metadrive_starter.vla.observation import ObservationRequest
+from metadrive_starter.vla.prompting import withhold_scene
 from metadrive_starter.vla_probe import (
     CaptureFunction,
     ProbeCapture,
@@ -48,6 +49,12 @@ from metadrive_starter.vla_probe import (
 # All eight public probe scenes, recorded with DriveBench's original observation
 # and configs/default.yaml.
 RECORDED_CATALOG = PROJECT_ROOT / "fixtures" / "vla" / "probes" / "catalog-20261002-v5"
+# Public scenes with pedestrians, cones, and barriers, which the probe cannot place,
+# each with its truth beside it: the scene measured to the truth radius, and each
+# placed object with whether the camera shows it.
+INTERPRETATION_CATALOG = (
+    PROJECT_ROOT / "fixtures" / "vla" / "probes" / "interpretation-public-20261030"
+)
 LOCAL_SCENE_FILE = "local_scene.json"
 
 
@@ -103,17 +110,37 @@ def load_recorded_probes(
     return tuple(probes)
 
 
+def recorded_capture(probes: Sequence[RecordedProbe]) -> CaptureFunction:
+    """A probe capture that hands back each recorded scene, so that a probe asks the
+    model about it through any observation and never drives MetaDrive."""
+    by_id = {probe.scenario_id: probe for probe in probes}
+
+    def capture(_config: AppConfig, scenario: ProbeScenario) -> ProbeCapture:
+        probe = by_id[scenario.scenario_id]
+        return ProbeCapture(
+            frame=probe.frame,
+            timestamp_s=probe.frame.timestamp_s,
+            ego_speed_mps=probe.ego_speed_mps,
+            scene=probe.scene,
+        )
+
+    return capture
+
+
 def observation_request(probe: RecordedProbe, config: AppConfig) -> ObservationRequest:
     """The request ``probe --submission`` builds for this scene under ``config``."""
+    withheld = config.vla.request_scene_fields.withheld
     return ObservationRequest(
         frame=probe.frame,
         now_s=probe.frame.timestamp_s,
         action_horizon_s=config.vla.action_horizon_s,
-        scene=probe.scene,
+        scene=withhold_scene(probe.scene, withheld),
         ego_speed_mps=probe.ego_speed_mps,
         cruise_speed_mps=config.controller.target_speed_mps,
         max_scene_objects=config.vla.max_scene_objects,
         prompt_policy=config.vla.prompt_policy,
+        model_id=config.vla.requested_model_id,
+        withheld=withheld,
     )
 
 

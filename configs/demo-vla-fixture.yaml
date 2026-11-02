@@ -17,17 +17,25 @@ vla:
   prompt_policy: >-
     On a clear lane, prefer the cruise speed. Reduce target speed for visible
     hazards, uncertainty, road geometry, or traffic controls; use 0 only when a
-    full stop is intended. Maintain safe forward progress. When
-    LOCAL_SCENE_CONTEXT confirms that a stationary lead blocks the current lane
-    and an adjacent lane is available and observed clear, prefer changing into
-    that lane over stopping or following. In LOCAL_SCENE_CONTEXT,
-    observed_clear=false means that side is occupied. Never propose a lane change
-    into a lane when available=false or observed_clear=false.
+    full stop is intended. Maintain safe forward progress. When the image shows
+    a stationary vehicle blocking the current lane and LOCAL_SCENE_CONTEXT shows
+    an adjacent lane available and observed clear, prefer changing into that
+    lane over stopping or following. In LOCAL_SCENE_CONTEXT,
+    observed_clear=false means that side is occupied. Never propose a lane
+    change into a lane when available=false or observed_clear=false.
   provider: fixture
   action_speed_policy_mode: enforce
   request_timeout_s: 1.0
   minimum_interval_s: 0.5
   action_horizon_s: 2.0
+  # Assignment 2's observation gets no measured objects or traffic lights, so the
+  # model must find them in the image; arbitration still sees the whole measured
+  # scene (ADR-0008). Instructor-owned: agent.yaml cannot change it.
+  request_scene_fields:
+    lanes: true
+    lane_clearance: true
+    traffic_controls: false
+    objects: false
   fixture:
     path: fixtures/vla/providers/synthetic-keep-lane.json
     repeat_last: true

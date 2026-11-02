@@ -493,6 +493,52 @@ def test_agent_yaml_tunes_the_prompt_text_and_channels_the_builder_receives(
     assert [request.prompt_policy for request in requests] == ["Prefer the cruise speed."]
 
 
+def test_a_request_names_the_model_it_goes_to() -> None:
+    requests: list[ObservationRequest] = []
+
+    class Recording:
+        def build(self, request: ObservationRequest) -> Observation:
+            requests.append(request)
+            return DefaultObservationBuilder().build(request)
+
+    pipeline = VLAInferencePipeline(
+        ScriptedModelProvider([KEEP_LANE]),
+        model_id="drivebench-smolvlm-256m-q8-0",
+        observation_builder=Recording(),
+    )
+
+    pipeline.infer(_frame(), now_s=10.0, request_id="request-1")
+
+    assert [request.model_id for request in requests] == ["drivebench-smolvlm-256m-q8-0"]
+
+
+@pytest.mark.parametrize(
+    ("name", "model_id"),
+    [
+        ("vla-probe-smolvlm-llama.yaml", "drivebench-smolvlm-256m-q8-0"),
+        ("vla-probe-qwen3-vl-2b-llama-structured.yaml", "drivebench-qwen3-vl-2b-q4-k-m"),
+        ("demo-vla-vertex.yaml", "gemini-3.5-flash-lite"),
+        # Recorded answers stand in for no model.
+        ("demo-vla-fixture.yaml", None),
+    ],
+)
+def test_each_configuration_names_the_model_its_requests_go_to(
+    name: str, model_id: str | None
+) -> None:
+    config = load_config(PROJECT_ROOT / "configs" / name)
+
+    assert config.vla.requested_model_id == model_id
+
+
+def test_a_run_builds_each_observation_for_the_configured_model() -> None:
+    config = load_config(PROJECT_ROOT / "configs" / "vla-probe-smolvlm-llama.yaml")
+    scheduler = build_vla_scheduler(config.vla)
+    try:
+        assert scheduler.pipeline.model_id == "drivebench-smolvlm-256m-q8-0"
+    finally:
+        scheduler.close()
+
+
 def test_run_without_the_vla_subsystem_builds_no_observation() -> None:
     built: list[ObservationSettings] = []
 

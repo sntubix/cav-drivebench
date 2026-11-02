@@ -1,0 +1,26 @@
+{
+  "lanes": {
+    "left": {
+      "available": true,
+      "observed_clear": true
+    },
+    "right": {
+      "available": true,
+      "observed_clear": true
+    }
+  },
+  "objects": [
+    {
+      "confidence": 1.0,
+      "distance_m": 24.0,
+      "estimated_speed_mps": 0.002,
+      "id": "study-public-single-barrier-ego-24m-a",
+      "in_path": true,
+      "kind": "traffic_barrier",
+      "relative_location": "front",
+      "relative_speed_mps": -0.024
+    }
+  ],
+  "traffic_controls": [],
+  "valid": true
+}

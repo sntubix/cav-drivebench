@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "synthetic-lane-change-left",
+  "source": "synthetic",
+  "prompt_contract_version": "drivebench-vla-assessment-v5",
+  "request_match": {
+    "prompt_sha256": null,
+    "rgb_sha256": null
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\"scene_summary\":\"A stopped vehicle blocks the ego lane and the left lane is clear.\",\"relevant_hazards\":[{\"type\":\"vehicle\",\"relative_location\":\"front\",\"risk\":\"medium\"}],\"meta_action\":\"CHANGE_LANE_LEFT\",\"target_speed_mps\":4.0,\"confidence\":0.95,\"brief_justification\":\"Use the clear adjacent lane.\"}",
+    "model_id": "synthetic-lane-change-model",
+    "latency_s": 0.0,
+    "metadata": {
+      "provider": "synthetic_fixture",
+      "response_id": "synthetic-lane-change-left-1",
+      "model_version": "synthetic-v1",
+      "input_tokens": 128,
+      "output_tokens": 48,
+      "total_tokens": 176
+    }
+  },
+  "artifact_sha256": "c32a2ea367bb6360745bcbdc28dfb933a31221434b38d1a57af1d47bea9298f3"
+}

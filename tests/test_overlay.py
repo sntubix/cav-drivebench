@@ -120,7 +120,13 @@ def test_endpoint_settings_cannot_be_set_from_an_overlay(allowlist: Allowlist) -
 
 @pytest.mark.parametrize(
     "path",
-    ["vla.http.endpoint_url", "vla.http.model_id", "vla.vertex.model_id"],
+    [
+        "vla.http.endpoint_url",
+        "vla.http.model_id",
+        "vla.vertex.model_id",
+        "vla.request_scene_fields",
+        "vla.request_scene_fields.objects",
+    ],
 )
 def test_no_allowlist_can_permit_an_endpoint_or_model_pin(path: str) -> None:
     with pytest.raises(ValueError, match=re.escape(f"{path} is instructor-owned")):

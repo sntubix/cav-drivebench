@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "synthetic-malformed",
+  "source": "synthetic",
+  "prompt_contract_version": "drivebench-vla-assessment-v5",
+  "request_match": {
+    "prompt_sha256": null,
+    "rgb_sha256": null
+  },
+  "outcome": {
+    "type": "response",
+    "text": "not JSON",
+    "model_id": "synthetic-fixture-model",
+    "latency_s": 0.05,
+    "metadata": {
+      "provider": "synthetic_fixture",
+      "response_id": "synthetic-response-malformed-1",
+      "model_version": "synthetic-v1",
+      "input_tokens": 64,
+      "output_tokens": 2,
+      "total_tokens": 66
+    }
+  },
+  "artifact_sha256": "adebafcbee1bd3e74d0e6f78a0fdca2d25f8cf4a91fb5929da6bcae7d22ffc0b"
+}

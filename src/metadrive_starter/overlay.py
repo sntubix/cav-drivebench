@@ -17,13 +17,15 @@ from typing import Any, Iterable, Iterator, Mapping
 
 from metadrive_starter.config import AppConfig
 
-# Endpoint and model pins: the instructor sets these at grading time, so no
+# Endpoint and model pins, and the measured-scene fields the model's observation
+# may draw on (ADR-0008): the instructor sets these at grading time, so no
 # allowlist may ever permit them.
 INSTRUCTOR_OWNED = (
     "vla.http",
     "vla.vertex.project_env",
     "vla.vertex.location",
     "vla.vertex.model_id",
+    "vla.request_scene_fields",
 )
 
 

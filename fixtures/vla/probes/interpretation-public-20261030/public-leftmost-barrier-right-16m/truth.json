@@ -1,0 +1,49 @@
+{
+  "id": "public-leftmost-barrier-right-16m",
+  "group": "outer-lane",
+  "map": "SS",
+  "seed": 2,
+  "spawn_longitude_m": null,
+  "tags": {},
+  "timestamp_s": 0.1,
+  "ego_speed_mps": 0.026030905544757843,
+  "ego_lane": 0,
+  "lane_count": 3,
+  "left_lane_available": false,
+  "right_lane_available": true,
+  "lens_fov_deg": [
+    60.0,
+    35.9833984375
+  ],
+  "width": 512,
+  "height": 288,
+  "png_sha256": "0773f9accb0a5fe3e3f81489e0d6ed629b73d0aee36493fa89a97bb93112f8ea",
+  "objects": [
+    {
+      "id": "a",
+      "spec": {
+        "id": "a",
+        "kind": "barrier",
+        "distance_m": 16.0,
+        "lane_offset": 1
+      },
+      "measured": true,
+      "object_id": "study-public-leftmost-barrier-right-16m-a",
+      "kind": "traffic_barrier",
+      "hazard_type": "obstacle",
+      "relative_location": "front_right",
+      "distance_m": 16.0,
+      "forward_m": 16.0,
+      "left_m": -3.5,
+      "in_path": false,
+      "lane_relation": "unknown",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        358.2,
+        179.4
+      ]
+    }
+  ],
+  "unexpected_objects": []
+}

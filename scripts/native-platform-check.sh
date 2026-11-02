@@ -12,11 +12,15 @@ MODEL_REL=""
 MMPROJ_REL=""
 SMOLVLM_MODEL_REL=""
 SMOLVLM_MMPROJ_REL=""
+LLAMA_VARIANT=cpu
 
 LLAMA_RELEASE="b10771"
 LLAMA_BUILD="10771"
 LLAMA_ARCHIVE_FILENAME="llama-b10771-bin-ubuntu-x64.tar.gz"
 LLAMA_ARCHIVE_SHA256="42bb60d6027c99ec05ff1a5ae441e45345a3fcccaf86ca655b4dc51b5519c814"
+# --vulkan: the same release's Vulkan build, which Assignment 2 is graded on.
+LLAMA_VULKAN_ARCHIVE_FILENAME="llama-b10771-bin-ubuntu-vulkan-x64.tar.gz"
+LLAMA_VULKAN_ARCHIVE_SHA256="35d98f9c60dcd6c1af2267990b33fcd981a011f8b902dcbb0d5f280bf807bd53"
 MODEL_REVISION="d38d39f5972e27cd58023f9b1e9f994b0c85ca47"
 MODEL_FILENAME="Qwen3VL-2B-Instruct-Q4_K_M.gguf"
 MODEL_SHA256="089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae"
@@ -39,11 +43,13 @@ PROC_VERSION_PATH="${NATIVE_PLATFORM_PROC_VERSION:-/proc/version}"
 CGROUP_PATH="${NATIVE_PLATFORM_CGROUP:-/proc/1/cgroup}"
 CONTAINER_MARKER="${NATIVE_PLATFORM_CONTAINER_MARKER:-/.dockerenv}"
 GNU_TIME="${NATIVE_PLATFORM_GNU_TIME:-/usr/bin/time}"
+XVFB="${NATIVE_PLATFORM_XVFB:-Xvfb}"
 XVFB_DISPLAY="${NATIVE_PLATFORM_DISPLAY:-:97}"
 
 SERVER_PID=""
 SAMPLER_PID=""
 XVFB_PID=""
+RENDER_PATH=none
 LLAMA_ARCHIVE_ACTUAL_SHA256="unavailable"
 LLAMA_SERVER_ACTUAL_SHA256="unavailable"
 MODEL_ACTUAL_SHA256="unavailable"
@@ -57,14 +63,18 @@ Usage: scripts/native-platform-check.sh \
   --model RELATIVE_PATH \
   --mmproj RELATIVE_PATH \
   [--smolvlm-model RELATIVE_PATH --smolvlm-mmproj RELATIVE_PATH] \
+  [--vulkan] \
   [--output-dir RELATIVE_PATH]
 
 Run the pinned native Ubuntu x86_64 VLM acceptance sequence:
   N0  native Ubuntu/runtime/model identity and clean-checkout checks
   N1  frozen uv environment and lock validation
-  N2  tests, dry-run smoke, a real native headless route, and the public
-      Assignment 1 gates, all with the shipped submission as a team runs them
-  N3  one fixed offscreen RGB probe capture under private Xvfb
+  N2  the offscreen render path: a private Xvfb display when Xvfb is
+      installed, otherwise no display, where Panda3D renders through EGL;
+      either must draw a valid camera frame. Then tests, dry-run smoke, a
+      real native headless route, and the public Assignment 1 gates, all
+      with the shipped submission as a team runs them
+  N3  one fixed offscreen RGB probe capture on that render path
   N4  fixture-backed VLA closed loop, deterministic replay, and the public
       gates through the shipped observation.py; not run without fixtures/
   N5  two clean llama-server rounds, each with schema-off/on probe replay
@@ -76,7 +86,9 @@ Run the pinned native Ubuntu x86_64 VLM acceptance sequence:
 
 The accepted candidate is llama.cpp b10771 with Qwen3-VL-2B-Instruct Q4_K_M
 and its Q8_0 multimodal projector at the hashes documented in
-docs/model-providers.md. Inputs must be paths inside the repository (normally
+docs/model-providers.md. It runs on the CPU archive with no GPU offload;
+--vulkan instead takes the release's Vulkan archive and offloads every layer
+and the projector to the GPU. Inputs must be paths inside the repository (normally
 under ignored tmp/native-vlm/). The evidence directory is new and is never
 overwritten. This command does not install system packages or download models.
 EOF
@@ -129,6 +141,10 @@ while (($# > 0)); do
       SMOLVLM_MMPROJ_REL=$2
       shift 2
       ;;
+    --vulkan)
+      LLAMA_VARIANT=vulkan
+      shift
+      ;;
     --output-dir)
       (($# >= 2)) || die "--output-dir requires a value"
       OUTPUT_REL=$2
@@ -157,6 +173,14 @@ case "${OUTPUT_REL}" in
   artifacts/native-platform-validation/*) ;;
   *) die "--output-dir must be below artifacts/native-platform-validation/" ;;
 esac
+
+if [[ "${LLAMA_VARIANT}" == vulkan ]]; then
+  LLAMA_ARCHIVE_FILENAME=${LLAMA_VULKAN_ARCHIVE_FILENAME}
+  LLAMA_ARCHIVE_SHA256=${LLAMA_VULKAN_ARCHIVE_SHA256}
+  LLAMA_OFFLOAD_ARGS=(--n-gpu-layers 99)
+else
+  LLAMA_OFFLOAD_ARGS=(--n-gpu-layers 0 --no-mmproj-offload)
+fi
 
 cd -- "${REPO_ROOT}"
 
@@ -297,6 +321,17 @@ gpu_inventory() {
   fi
 }
 
+gpu_driver_inventory() {
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi --query-gpu=driver_version --format=csv,noheader | paste -sd ';' -
+  elif command -v vulkaninfo >/dev/null 2>&1; then
+    vulkaninfo --summary 2>/dev/null \
+      | awk '/driverName|driverInfo/ {sub(/^[[:space:]]+/, ""); print}' | paste -sd ';' -
+  else
+    return 1
+  fi
+}
+
 verify_server_matches_archive() {
   local members
   local member_count
@@ -325,6 +360,7 @@ write_host_inventory() {
   local git_commit
   local git_dirty=false
   local llama_version=unavailable
+  local llama_devices=unavailable
 
   git_commit=$(value_or_unavailable git rev-parse --verify HEAD)
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
@@ -333,6 +369,9 @@ write_host_inventory() {
   if [[ -x "${LLAMA_SERVER_PATH}" ]]; then
     llama_version=$("${LLAMA_SERVER_PATH}" --version 2>&1) || llama_version=unavailable
     [[ -n "${llama_version}" ]] || llama_version=unavailable
+    # The devices this build can offload to, as it names them.
+    llama_devices=$("${LLAMA_SERVER_PATH}" --list-devices 2>&1) || llama_devices=unavailable
+    [[ -n "${llama_devices}" ]] || llama_devices=unavailable
   fi
   LLAMA_ARCHIVE_ACTUAL_SHA256=$(value_or_unavailable sha256_file "${LLAMA_ARCHIVE_PATH}")
   LLAMA_SERVER_ACTUAL_SHA256=$(value_or_unavailable sha256_file "${LLAMA_SERVER_PATH}")
@@ -349,12 +388,15 @@ write_host_inventory() {
   "cpu": "$(json_escape "$(value_or_unavailable cpu_inventory)")",
   "memory_kib": "$(json_escape "$(value_or_unavailable memory_inventory)")",
   "gpu": "$(json_escape "$(value_or_unavailable gpu_inventory)")",
+  "gpu_driver": "$(json_escape "$(value_or_unavailable gpu_driver_inventory)")",
   "uv": "$(json_escape "$(value_or_unavailable uv --version)")",
   "git_commit": "$(json_escape "${git_commit}")",
   "git_dirty": ${git_dirty},
   "uv_lock_sha256": "$(json_escape "$(value_or_unavailable sha256_file uv.lock)")",
   "llama_release": "${LLAMA_RELEASE}",
   "llama_version": "$(json_escape "${llama_version}")",
+  "llama_variant": "${LLAMA_VARIANT}",
+  "llama_devices": "$(json_escape "${llama_devices}")",
   "llama_archive_path": "$(json_escape "${LLAMA_ARCHIVE_REL}")",
   "llama_archive_sha256": "$(json_escape "${LLAMA_ARCHIVE_ACTUAL_SHA256}")",
   "llama_archive_size_bytes": "$(json_escape "$(value_or_unavailable stat -c %s "${LLAMA_ARCHIVE_PATH}")")",
@@ -403,7 +445,7 @@ check_native_platform() {
     printf 'WSL is not accepted as native Ubuntu evidence\n'
     return 1
   }
-  for command_name in uv curl Xvfb sha256sum git ps tar; do
+  for command_name in uv curl sha256sum git ps tar; do
     command -v "${command_name}" >/dev/null 2>&1 || {
       printf 'required command not found: %s\n' "${command_name}"
       return 1
@@ -456,6 +498,16 @@ check_native_platform() {
         "${LLAMA_BUILD}" "${llama_version}"
       return 1
     }
+  if [[ "${LLAMA_VARIANT}" == vulkan ]]; then
+    # Without a Vulkan device the build serves from the CPU, which is not the
+    # variant this bundle would claim.
+    grep -Eq '^[[:space:]]*Vulkan[0-9]+:' \
+      <<<"$("${LLAMA_SERVER_PATH}" --list-devices 2>&1)" || {
+        printf 'the Vulkan build lists no Vulkan device\n'
+        "${LLAMA_SERVER_PATH}" --list-devices 2>&1
+        return 1
+      }
+  fi
   [[ -z "$(git status --porcelain)" ]] || {
     printf 'git checkout must be clean before native acceptance\n'
     git status --short
@@ -475,7 +527,7 @@ start_xvfb() {
       "${XVFB_DISPLAY}"
     return 1
   }
-  Xvfb "${XVFB_DISPLAY}" -screen 0 1280x720x24 -nolisten tcp \
+  "${XVFB}" "${XVFB_DISPLAY}" -screen 0 1280x720x24 -nolisten tcp \
     > "${OUTPUT_DIR}/logs/xvfb.log" 2>&1 &
   XVFB_PID=$!
   export DISPLAY="${XVFB_DISPLAY}"
@@ -485,6 +537,54 @@ start_xvfb() {
     return 1
   }
   printf 'private Xvfb display ready: %s\n' "${DISPLAY}"
+}
+
+stop_xvfb() {
+  if [[ -n "${XVFB_PID}" ]]; then
+    kill "${XVFB_PID}" 2>/dev/null || true
+    wait "${XVFB_PID}" 2>/dev/null || true
+    XVFB_PID=""
+  fi
+}
+
+# verify_render xvfb|headless: draw one camera frame on the current display and
+# record the Panda3D pipe and OpenGL driver that drew it in render/MODE.json.
+verify_render() {
+  local mode=$1
+  local -a render_command=(
+    uv run --frozen python scripts/native_render_check.py
+    --render-path "${mode}"
+    --output "${OUTPUT_REL}/render/${mode}.json"
+    --frame "${OUTPUT_REL}/render/${mode}.png"
+  )
+  mkdir -p -- "${OUTPUT_DIR}/render"
+  command_text "${render_command[@]}" > "${OUTPUT_DIR}/render/${mode}-command.txt"
+  "${render_command[@]}"
+}
+
+# Every later gate renders where this leaves DISPLAY: on the private Xvfb
+# display when Xvfb is installed and draws a valid frame, and otherwise with no
+# display, never the desktop session's.
+choose_render_path() {
+  if command -v "${XVFB}" >/dev/null 2>&1; then
+    if start_xvfb && verify_render xvfb; then
+      RENDER_PATH=xvfb
+      printf 'rendering on the private Xvfb display %s\n' "${DISPLAY}"
+      return 0
+    fi
+    stop_xvfb
+    printf 'no valid frame through a private Xvfb display; trying headless rendering\n'
+  else
+    printf '%s is not installed; trying headless rendering\n' "${XVFB}"
+  fi
+  unset DISPLAY
+  if verify_render headless; then
+    RENDER_PATH=headless
+    printf 'rendering headless, with no display\n'
+    return 0
+  fi
+  printf 'neither a private Xvfb display nor headless rendering drew a valid frame\n'
+  return 1
 }
 
 stop_server() {
@@ -508,11 +608,7 @@ stop_server() {
 
 cleanup() {
   stop_server >/dev/null 2>&1 || true
-  if [[ -n "${XVFB_PID}" ]]; then
-    kill "${XVFB_PID}" 2>/dev/null || true
-    wait "${XVFB_PID}" 2>/dev/null || true
-    XVFB_PID=""
-  fi
+  stop_xvfb
 }
 trap cleanup EXIT INT TERM
 
@@ -552,8 +648,7 @@ start_server() {
     --alias "${alias}"
     --ctx-size 4096
     --threads 4
-    --n-gpu-layers 0
-    --no-mmproj-offload
+    "${LLAMA_OFFLOAD_ARGS[@]}"
     --parallel 1
     "$@"
     --temp 0
@@ -770,8 +865,9 @@ finalize_summary() {
   local successful=$1
   {
     printf '{\n  "schema_version": 1,\n  "successful": %s,\n' "${successful}"
-    printf '  "candidate": {"llama_release": "%s", "model_revision": "%s"},\n' \
-      "${LLAMA_RELEASE}" "${MODEL_REVISION}"
+    printf '  "candidate": {"llama_release": "%s", "llama_variant": "%s", "model_revision": "%s"},\n' \
+      "${LLAMA_RELEASE}" "${LLAMA_VARIANT}" "${MODEL_REVISION}"
+    printf '  "render_path": "%s",\n' "${RENDER_PATH}"
     printf '  "gates": [\n'
     awk 'NR > 1 {printf ",\n"} {printf "    %s", $0} END {printf "\n"}' \
       "${RESULTS_NDJSON}"
@@ -800,7 +896,7 @@ required_gate() {
 required_gate n0-platform "Verify native Ubuntu and pinned VLM identity" check_native_platform
 required_gate n1-sync "Create the frozen native uv environment" uv sync --frozen --group dev
 required_gate n1-lock "Validate the dependency lock" uv lock --check
-required_gate n2-xvfb "Start a private native Xvfb display" start_xvfb
+required_gate n2-render "Choose and verify the offscreen render path" choose_render_path
 required_gate n2-tests "Run the complete native test suite" uv run --frozen python -m pytest
 # Every command a team runs drives the shipped submission, as it would in a
 # student release, which has no reference controller.

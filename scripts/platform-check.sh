@@ -381,7 +381,7 @@ fi
 record_not_run g3a-visual-review "Offscreen RGB visual review" \
   "manual gate: inspect camera/probe images for orientation, colour, and scene content"
 record_not_run g3b-gui "Rendered window and keyboard input" \
-  "manual gate: follow the rendered Linux/WSLg command in README.md"
+  "manual gate: run the keyboard-control demonstration in docs/running-and-configuring.md"
 record_not_run g5-local-vlm "Live local VLM" \
   "explicit gate: start the selected isolated server and run fixed probe plus closed loop"
 record_not_run g6-cloud-vlm "Live cloud VLM" \

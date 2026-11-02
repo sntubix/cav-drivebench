@@ -146,6 +146,10 @@ class VLACommandRuntime:
 
         self._expire_active_validation(now_s)
         completion = self.scheduler.poll()
+        if completion is not None and self.fault_provider is not None:
+            # The provider consumes a registration only if the request reaches it;
+            # a pipeline that failed earlier leaves it behind, so drop it here.
+            self.fault_provider.unregister(completion.request_id)
         validation: CommandValidationDecision | None = None
         arbitration: ArbitrationDecision | None = None
         if isinstance(completion, InferenceSuccess):
@@ -198,22 +202,26 @@ class VLACommandRuntime:
             try:
                 if has_fault(active_faults, FaultKind.CAMERA_DROPOUT):
                     raise CameraCaptureError("injected camera dropout")
-                frame = self.camera.capture(env, timestamp_s=now_s)
-                if self.fault_provider is not None:
-                    self.fault_provider.register(candidate_request_id, active_faults)
-                submission = self.scheduler.submit(
-                    frame,
-                    now_s=now_s,
-                    request_id=candidate_request_id,
-                    scene=scene,
-                    ego_speed_mps=ego_speed_mps,
-                    cruise_speed_mps=cruise_speed_mps,
-                )
-                if (
-                    self.fault_provider is not None
-                    and submission is not InferenceSubmitDisposition.STARTED
-                ):
-                    self.fault_provider.unregister(candidate_request_id)
+                # A frame the scheduler would reject is never captured: while a
+                # request is out, or too soon after one, the render would be wasted.
+                submission = self.scheduler.would_reject(now_s=now_s)
+                if submission is None:
+                    frame = self.camera.capture(env, timestamp_s=now_s)
+                    if self.fault_provider is not None:
+                        self.fault_provider.register(candidate_request_id, active_faults)
+                    submission = self.scheduler.submit(
+                        frame,
+                        now_s=now_s,
+                        request_id=candidate_request_id,
+                        scene=scene,
+                        ego_speed_mps=ego_speed_mps,
+                        cruise_speed_mps=cruise_speed_mps,
+                    )
+                    if (
+                        self.fault_provider is not None
+                        and submission is not InferenceSubmitDisposition.STARTED
+                    ):
+                        self.fault_provider.unregister(candidate_request_id)
                 if submission is InferenceSubmitDisposition.STARTED:
                     submitted_request_id = candidate_request_id
                     submitted_episode_id = self.scheduler.active_episode_id

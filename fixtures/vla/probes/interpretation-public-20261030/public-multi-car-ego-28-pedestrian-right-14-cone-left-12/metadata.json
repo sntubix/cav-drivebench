@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.02603090554482922,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "b6f527b41bff4b14945bd0a03f38e215110d6bf154b475cb7d7ed5ff05d44336",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "a41eb303fcd51c42b56dc76a94e2ab01e18dd64a7325705580683af209822acc",
+    "rgb_sha256": "f24edefacd987682349eedc75babb7a30b58a8fd6307d753093cf50e1709e3ec",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "8de854d628052d62221d73bb0d1f0a6fdfc31169b25217b1b29d9df9dd1544ec",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-public-multi-car-ego-28-pedestrian-right-14-cone-left-12-seed-6"
+  },
+  "scenario": {
+    "description": "Placed on the route: a car 28 m ahead in the ego lane, a pedestrian 14 m ahead in the right lane, a cone 12 m ahead in the left lane.",
+    "evaluation": null,
+    "expected_visual": "See truth.json for each placed object and whether it is in view.",
+    "id": "public-multi-car-ego-28-pedestrian-right-14-cone-left-12",
+    "map": "SS",
+    "seed": 6,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 4
+}

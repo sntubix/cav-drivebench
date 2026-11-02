@@ -136,8 +136,11 @@ def run_implementation_checks(factory: VehicleControllerFactory) -> tuple[CheckR
 def _run(name: str, check: _Check, factory: VehicleControllerFactory) -> CheckResult:
     try:
         passed, detail = check(factory)
-    except Exception as exc:
-        # Submitted code may raise anything; the check reports it.
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        # Submitted code may raise anything or call sys.exit(); the check reports
+        # it. Only an operator's interrupt stops the checks.
         return CheckResult(name, False, f"the controller raised {type(exc).__name__}: {exc}")
     return CheckResult(name, passed, detail)
 

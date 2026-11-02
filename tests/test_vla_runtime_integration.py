@@ -346,6 +346,71 @@ def test_lane_change_completes_and_replays_across_map_shapes(
 
 
 @pytest.mark.instructor
+def test_unavailable_lane_change_route_counts_and_logs_the_start_it_aborts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = load_config(PROJECT_ROOT / "configs" / "demo-emergency-braking.yaml")
+    config.simulator.map = "S"
+    config.simulator.headless = True
+    config.simulator.horizon = 40
+    config.simulator.out_of_road_done = False
+    config.camera = replace(config.camera, enabled=True, width=160, height=90)
+    config.vla = replace(
+        config.vla,
+        enabled=True,
+        minimum_interval_s=0.0,
+        action_speed_policy_mode="enforce",
+    )
+    config.planner.lane_change_enabled = True
+    config.event_log = EventLogSettings(
+        enabled=True,
+        path=str(tmp_path / "lane-route-unavailable-events.jsonl"),
+        scenario_id="lane-route-unavailable",
+    )
+    scheduler = VLAInferenceScheduler(
+        VLAInferencePipeline(ChangeLaneRightProvider()),
+        minimum_interval_s=0.0,
+    )
+    monkeypatch.setattr(
+        "metadrive_starter.simulation.build_vla_scheduler",
+        lambda settings, **_: scheduler,
+    )
+
+    def unavailable_route(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("no route into the adjacent lane")
+
+    monkeypatch.setattr(
+        "metadrive_starter.simulation.lane_change_waypoints",
+        unavailable_route,
+    )
+
+    summary = run_simulation(config)
+    records = read_event_log(config.event_log.path)
+    replay = replay_event_log(config.event_log.path)
+    transitions = [
+        record.payload
+        for record in records
+        if record.event_type == "lane_change_transition"
+    ]
+
+    assert summary.lane_changes_started == 1
+    assert summary.lane_changes_completed == 0
+    assert summary.lane_changes_aborted == 1
+    assert [item["decision"]["phase"] for item in transitions] == [
+        "started",
+        "aborted",
+    ]
+    assert transitions[0]["decision"]["command_id"] == (
+        transitions[1]["decision"]["command_id"]
+    )
+    assert transitions[1]["context"]["forced_abort_reason"] == (
+        "lane-change route unavailable: no route into the adjacent lane"
+    )
+    assert replay.successful is True
+
+
+@pytest.mark.instructor
 def test_follow_forces_live_headway_enforcement_when_global_mode_is_off(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

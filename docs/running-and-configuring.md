@@ -30,8 +30,8 @@ uv run metadrive-starter run \
 ```
 
 This profile uses the `XTOC` map and places a static vehicle 25 m ahead. The PID
-controller proposes ordinary controls while the local safety supervisor may
-remove throttle or apply service/emergency braking.
+controller proposes ordinary controls while the safety floor may remove
+throttle or apply service/emergency braking.
 
 <details>
 <summary>More rendered, curved-road, and manual demonstrations</summary>
@@ -110,8 +110,7 @@ On Linux, run the complete automated Docker baseline from a fresh checkout:
 
 The validator builds the image, checks the frozen lock and bundled MetaDrive
 assets, runs the tests, smoke check, and real route, captures the RGB probe
-catalog under Xvfb, then, once a release includes Assignment 2's fixtures, runs
-and replays the fixture-backed VLA loop. It writes new evidence under
+catalog under Xvfb, then runs and replays the fixture-backed VLA loop. It writes new evidence under
 `artifacts/platform-validation/<UTC timestamp>/` and never overwrites an earlier
 run. Use `--skip-build` only while iterating against an image built from the
 same checkout.

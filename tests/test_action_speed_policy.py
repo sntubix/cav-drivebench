@@ -25,16 +25,16 @@ def test_action_speed_policy_off_preserves_raw_target_without_mapping() -> None:
 
 
 def test_action_speed_policy_shadow_records_but_does_not_apply_mapping() -> None:
-    decision = _policy("shadow").evaluate(HighLevelAction.KEEP_LANE, 0.0)
+    decision = _policy("shadow").evaluate(HighLevelAction.SLOW_DOWN, 7.0)
 
-    assert decision.mapped_target_speed_mps == 10.0
-    assert decision.effective_target_speed_mps == 0.0
+    assert decision.mapped_target_speed_mps == 5.0
+    assert decision.effective_target_speed_mps == 7.0
     assert decision.would_intervene is True
     assert decision.applied is False
 
 
 @pytest.mark.parametrize(
-    ("action", "expected_speed_mps"),
+    ("action", "mapped_speed_mps"),
     [
         (HighLevelAction.KEEP_LANE, 10.0),
         (HighLevelAction.FOLLOW, 10.0),
@@ -45,16 +45,28 @@ def test_action_speed_policy_shadow_records_but_does_not_apply_mapping() -> None
         (HighLevelAction.STOP, 0.0),
     ],
 )
-def test_action_speed_policy_enforces_local_action_mapping(
+def test_action_speed_policy_enforces_local_action_mapping_as_a_ceiling(
     action: HighLevelAction,
-    expected_speed_mps: float,
+    mapped_speed_mps: float,
 ) -> None:
     decision = _policy("enforce").evaluate(action, 7.0)
 
-    assert decision.mapped_target_speed_mps == expected_speed_mps
-    assert decision.effective_target_speed_mps == expected_speed_mps
-    assert decision.would_intervene is (expected_speed_mps != 7.0)
-    assert decision.applied is (expected_speed_mps != 7.0)
+    assert decision.mapped_target_speed_mps == mapped_speed_mps
+    assert decision.effective_target_speed_mps == min(mapped_speed_mps, 7.0)
+    assert decision.would_intervene is (mapped_speed_mps < 7.0)
+    assert decision.applied is (mapped_speed_mps < 7.0)
+
+
+@pytest.mark.parametrize("mode", ["shadow", "enforce"])
+def test_action_speed_policy_never_raises_a_lowered_speed(mode: str) -> None:
+    # An arbiter may lower the speed, and the floor may cap it; the policy keeps
+    # what they left (the monotone restriction, ADR-0001).
+    decision = _policy(mode).evaluate(HighLevelAction.KEEP_LANE, 1.0)
+
+    assert decision.mapped_target_speed_mps == 10.0
+    assert decision.effective_target_speed_mps == 1.0
+    assert decision.would_intervene is False
+    assert decision.applied is False
 
 
 @pytest.mark.parametrize("mode", ["", "observe", "ENFORCE"])

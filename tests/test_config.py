@@ -685,7 +685,7 @@ def test_smolvlm_llama_profiles_differ_from_the_qwen_ones_only_in_the_model(
     assert smolvlm["vla"]["http"]["structured_output"] is structured_output
 
 
-def test_lane_change_probe_profiles_are_bounded_and_provider_specific() -> None:
+def test_lane_change_probe_profiles_cap_only_the_cloud_provider() -> None:
     local = load_config(
         PROJECT_ROOT / "configs" / "vla-probe-lane-change-qwen3-vl-2b-mlx.yaml"
     )
@@ -694,7 +694,7 @@ def test_lane_change_probe_profiles_are_bounded_and_provider_specific() -> None:
     )
 
     assert local.vla.provider == "http"
-    assert local.vla.maximum_requests_per_run == 2
+    assert local.vla.maximum_requests_per_run is None
     assert local.vla.http.structured_output is True
     assert vertex.vla.provider == "vertex"
     assert vertex.vla.maximum_requests_per_run == 2
@@ -720,7 +720,7 @@ def test_runtime_qwen_demo_enables_all_local_safety_boundaries() -> None:
     assert config.event_log.scenario_id == "qwen3-vl-runtime-demo"
 
 
-def test_native_llama_acceptance_profile_is_paced_capped_and_headless() -> None:
+def test_native_llama_acceptance_profile_is_paced_uncapped_and_headless() -> None:
     config = load_config(PROJECT_ROOT / "configs/demo-vla-qwen3-vl-2b-llama.yaml")
 
     assert config.simulator.headless is True
@@ -728,7 +728,8 @@ def test_native_llama_acceptance_profile_is_paced_capped_and_headless() -> None:
     assert config.simulator.realtime_factor == 0.25
     assert config.simulator.horizon == 100
     assert config.vla.enabled is True
-    assert config.vla.maximum_requests_per_run == 3
+    # A local server costs wall-clock time only; only cloud profiles carry a cap.
+    assert config.vla.maximum_requests_per_run is None
     assert config.vla.http.structured_output is True
     assert config.vla.http.model_id == "drivebench-qwen3-vl-2b-q4-k-m"
     assert config.safety.enabled is True
@@ -871,6 +872,12 @@ def test_a_configuration_file_that_repeats_a_pid_value_is_refused(
         load_config(path)
 
 
+def test_a_configuration_file_that_does_not_exist_is_refused(tmp_path: Path) -> None:
+    # A typo in --config must never run on the defaults, with the model off.
+    with pytest.raises(FileNotFoundError, match="defualt.yaml"):
+        load_config(tmp_path / "defualt.yaml")
+
+
 def test_each_default_is_written_once() -> None:
     assert config_from_dict({}).controller == ControllerSettings()
     assert config_from_dict({}).planner == PlannerSettings()
@@ -907,7 +914,9 @@ def test_an_edit_to_pid_yaml_takes_effect_without_a_restart(
     path.write_text(PID_YAML_TEXT.replace("kp: 0.12", "kp: 0.31415"))
 
     assert config_from_dict({}).controller.speed_pid.kp == 0.31415
-    assert load_config(tmp_path / "absent.yaml").controller.speed_pid.kp == 0.31415
+    scenario = tmp_path / "scenario.yaml"
+    scenario.write_text("")
+    assert load_config(scenario).controller.speed_pid.kp == 0.31415
 
 
 @pytest.mark.parametrize(

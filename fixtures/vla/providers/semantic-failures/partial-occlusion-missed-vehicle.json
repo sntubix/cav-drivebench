@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "semantic-partial-occlusion-missed-vehicle",
+  "source": "synthetic",
+  "prompt_contract_version": "drivebench-vla-assessment-v5",
+  "request_match": {
+    "prompt_sha256": null,
+    "rgb_sha256": null
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\"scene_summary\":\"A truck travels ahead in the ego lane and the road beyond it is clear.\",\"relevant_hazards\":[{\"type\":\"vehicle\",\"relative_location\":\"front\",\"risk\":\"low\"}],\"meta_action\":\"KEEP_LANE\",\"target_speed_mps\":8.0,\"confidence\":0.9,\"brief_justification\":\"Follow the truck's flow; nothing else blocks the lane.\"}",
+    "model_id": "synthetic-semantic-failure-model",
+    "latency_s": 0.0,
+    "metadata": {
+      "provider": "synthetic_fixture",
+      "response_id": "semantic-partial-occlusion-missed-vehicle-1",
+      "model_version": "synthetic-v1",
+      "input_tokens": 128,
+      "output_tokens": 64,
+      "total_tokens": 192
+    }
+  },
+  "artifact_sha256": "a552580741ffc2a5b7027a4d0dc00701943f506840eb38ce6b3a25ac535359a9"
+}

@@ -1,6 +1,6 @@
 # Getting started
 
-[← DriveBench README](../README.md) · [Next: Assignment 1 brief →](../course/assignment-1/README.md)
+[← DriveBench README](../README.md) · [Next: Assignment 2 brief →](../course/assignment-2/README.md)
 
 The basics: get the code, install it, check that it runs, and know where your
 work goes, how to check it, and how to hand it in. For rendered
@@ -155,10 +155,13 @@ uv run metadrive-starter config --submission submission
 
 ### Check your work
 
-The structural gates check your submission the way grading does:
+The structural gates check your submission the way grading does. Each
+assignment has its own gates, so run the `gates` command its brief gives; the
+bare command runs Assignment 1's, which never load an `observation.py` or an
+`arbitration.py`. For Assignment 2:
 
 ```bash
-uv run metadrive-starter gates
+uv run metadrive-starter gates --manifest configs/gates-assignment-2.yaml --config configs/demo-vla-fixture.yaml
 ```
 
 `gates` checks `submission/` unless you pass `--submission` with another
@@ -184,13 +187,18 @@ uv run python -m zipfile -c tmp/submission.zip submission
 ```
 
 Before uploading, check the zip: unpack it into a new folder, and run the
-assignment's gates on what came out by adding `--submission` with that folder.
-The report should match the one for `submission/`. For Assignment 1:
+assignment's gates on what came out by adding `--submission` with that folder
+to the `gates` command its brief gives. The report should match the one for
+`submission/`. For Assignment 2:
 
 ```bash
-uv run python -m zipfile -e tmp/submission.zip tmp/zip-check-1
-uv run metadrive-starter gates --submission tmp/zip-check-1/submission
+check=$(mktemp -d tmp/zip-check-XXXXXX)
+uv run python -m zipfile -e tmp/submission.zip "$check"
+uv run metadrive-starter gates --manifest configs/gates-assignment-2.yaml --config configs/demo-vla-fixture.yaml --submission "$check/submission"
 ```
+
+The first line makes a new, empty folder for every check, so files left from an
+earlier check never stand in for one the zip lacks.
 
 You may replace your upload as often as you like until the deadline. Only the
 last upload is graded, after the deadline closes, and nothing is accepted after
@@ -203,6 +211,8 @@ structural gates flag it before you hand in.
 
 ## Where to go next
 
-Start [Assignment 1](../course/assignment-1/README.md). For demonstrations,
+Read the briefs, in order; each builds on the one before:
+[Assignment 1](../course/assignment-1/README.md), then
+[Assignment 2](../course/assignment-2/README.md). For demonstrations,
 Docker, platforms, and configuration, see
 [Running and configuring DriveBench](running-and-configuring.md).

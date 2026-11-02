@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026031019166116675,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "fcbf0bd17e697afba0cdac89286ce79dcc8abd00d1cdb843245f7b5ef4e83261",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "86363e36bce0b489fbd9927a3cf8770bf1a0e359f9d2147793be81f2069d71bc",
+    "rgb_sha256": "d45e50cc4995562f7a306a477b4a755d9bf2a9f05aadccd21f0a780e0e0ca2ae",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "8aad6705d14e2f1c6659e2c303778f36b46485ea47ed0be005fe83ffcd5d8257",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-public-bend-pedestrian-left-11m-seed-3"
+  },
+  "scenario": {
+    "description": "Placed on the route: a pedestrian 11 m ahead in the left lane.",
+    "evaluation": null,
+    "expected_visual": "See truth.json for each placed object and whether it is in view.",
+    "id": "public-bend-pedestrian-left-11m",
+    "map": "CS",
+    "seed": 3,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 4
+}

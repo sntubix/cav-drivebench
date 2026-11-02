@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "semantic-stopped-vehicle-keep-lane",
+  "source": "synthetic",
+  "prompt_contract_version": "drivebench-vla-assessment-v5",
+  "request_match": {
+    "prompt_sha256": null,
+    "rgb_sha256": null
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\"scene_summary\":\"A stopped car sits ahead in the ego lane on a straight road.\",\"relevant_hazards\":[{\"type\":\"vehicle\",\"relative_location\":\"front\",\"risk\":\"high\"}],\"meta_action\":\"KEEP_LANE\",\"target_speed_mps\":9.72,\"confidence\":0.93,\"brief_justification\":\"The lane continues straight ahead; hold the cruise speed.\"}",
+    "model_id": "synthetic-semantic-failure-model",
+    "latency_s": 0.0,
+    "metadata": {
+      "provider": "synthetic_fixture",
+      "response_id": "semantic-stopped-vehicle-keep-lane-1",
+      "model_version": "synthetic-v1",
+      "input_tokens": 128,
+      "output_tokens": 64,
+      "total_tokens": 192
+    }
+  },
+  "artifact_sha256": "f85a89ae928db473ca2adaa75610352dde719bff3e30c1bce7140d86b9652339"
+}

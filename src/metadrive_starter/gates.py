@@ -1,17 +1,17 @@
 """Structural gates: mechanical pass/fail checks on a team's submission.
 
 Teams run these gates locally against the public scenarios, and instructors
-grade with the same code against hidden ones, so a hidden failure means a team
-skipped a check it had. Gates catch what breaks a run. How well a submission
+grade with the same code against hidden ones, so the public run is a close
+reference for the hidden one. Gates catch what breaks a run. How well a submission
 drives is its score, which the same run reports: half from implementation checks
 of its controller, half from how it drove the manifest's routes. The score never
 decides a gate.
 
-Where routes are scored, a route that crashes, leaves the road, or does not
-arrive is part of how the submission drove: it earns no driving credit, and only
-a run an error stopped fails a gate. A team cannot drive the hidden routes, and a
-tuning choice that leaves one of them should cost that route, not every mark.
-Where routes are not scored, completing them is the gate.
+A route that crashes, leaves the road, or does not arrive is part of how the
+submission drove, and only a run an error stopped fails a gate (ADR-0006). Where
+routes are scored it earns no driving credit; where they are not, it costs
+nothing. A team cannot drive the hidden routes, and a tuning choice that leaves
+one of them should cost that route, not every mark.
 
 When the base configuration enables the VLA subsystem, the routes are driven
 with the model asked through the team's observation.py and its assessments
@@ -20,12 +20,17 @@ observation built could be sent; neither held the control loop up, an
 observation past the request timeout or an arbiter call past one control step;
 and no arbiter answer granted more authority than the model proposed. An
 observation without every output-contract line can be sent, so it fails
-nothing; the first gate's detail counts them.
+nothing; the first gate's detail counts them. A manifest's ``observation_models``
+names the models an assignment is marked on: every request is then built once more
+for each of them, with ``model_id`` naming it, so that a builder that prompts each
+model its own way is checked on every branch, though the drive itself answers
+from a recording.
 
 A manifest may also hold fault scenarios: routes driven under a schedule of
 injected camera, LiDAR, or model-provider faults. One more gate judges them, that
-no fault crashed the vehicle, sent it off the road, or stopped the run. They need
-not arrive, and they never count toward the routes gate or the score.
+no fault scenario stopped on an error; a crash or an off-road exit is reported, as
+on a route. They need not arrive, and they never count toward the routes gate or
+the score.
 
 A manifest that declares ``no_score`` reports no score, only its reason: the
 score above is Assignment 1's, and another assignment's run would only mislead.
@@ -41,7 +46,7 @@ import os
 import re
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
@@ -100,7 +105,6 @@ from metadrive_starter.vla import (
 GATE_MANIFEST_VERSION = 1
 SUBMISSION_LOADS = "submission loads"
 BOUNDED_OUTPUTS = "bounded control outputs"
-ROUTE_COMPLETES = "route completes"
 RUNS_FINISH = "no run stops on an error"
 VALID_OBSERVATIONS = "valid observations emitted"
 CONTROL_LOOP_UNBLOCKED = "control loop never blocked"
@@ -241,6 +245,9 @@ class GatePlan:
     # Why this plan reports no score, and where the assignment is marked instead;
     # None when its runs are scored.
     no_score: str | None = None
+    # The models the assignment's observation is marked on, as their configurations
+    # name them; each request is built for each of them too.
+    observation_models: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.plan_id, str) or not _ID_PATTERN.fullmatch(self.plan_id):
@@ -256,6 +263,12 @@ class GatePlan:
             not isinstance(self.no_score, str) or not self.no_score.strip()
         ):
             raise ValueError("gate manifest no_score must be text saying why")
+        if not isinstance(self.observation_models, tuple) or not all(
+            isinstance(model, str) and model.strip() for model in self.observation_models
+        ):
+            raise ValueError("gate manifest observation_models must be model ids")
+        if len(set(self.observation_models)) != len(self.observation_models):
+            raise ValueError("gate manifest observation_models must be unique")
         if self.no_score is None:
             unscored = [
                 scenario.scenario_id
@@ -348,6 +361,8 @@ class _ObservationLog:
     slowest_s: float = 0.0
     # Why an observation could not be sent, per build that produced none.
     problems: list[str] = field(default_factory=list)
+    # The models each request was also built for.
+    models: tuple[str, ...] = ()
     # The first call that ran past the deadline; later calls are refused.
     overrun: str | None = None
 
@@ -372,7 +387,7 @@ class _ArbitrationLog:
 class _Drive:
     scenario: GateScenario
     summary: RunSummary | None
-    error: Exception | None
+    error: BaseException | None
     # Every control tick the submitted controller saw.
     ticks: tuple[ControlTick, ...] = ()
     # None when the drive never asks the model.
@@ -399,6 +414,11 @@ class _Overrun(Exception):
     """A submitted call had not returned by its deadline; the message says which."""
 
 
+class _Exited(Exception):
+    """A submitted call exited, as sys.exit() does, instead of returning or
+    raising an error; the message names the call and the exit, as for a raise."""
+
+
 class _ObservationRecorder:
     """Passes every build through to a submitted observation builder, within a
     deadline, and logs what it returned. The pipeline then checks and sends the
@@ -410,12 +430,28 @@ class _ObservationRecorder:
         log: _ObservationLog,
         *,
         deadline_s: float,
+        models: tuple[str, ...] = (),
     ) -> None:
         self._builder = builder
         self._log = log
         self._deadline_s = deadline_s
+        self._models = models
+        log.models = models
 
     def build(self, request: ObservationRequest) -> Observation:
+        observation = self._checked_build(request, "")
+        # The same request for each model the assignment is marked on; only a
+        # problem is kept, and the drive goes on with the observation above.
+        for model in self._models:
+            if model == request.model_id or self._log.overrun is not None:
+                continue
+            try:
+                self._checked_build(replace(request, model_id=model), f" for {model}")
+            except Exception:
+                pass
+        return observation
+
+    def _checked_build(self, request: ObservationRequest, model: str) -> Observation:
         log = self._log
         if log.overrun is not None:
             raise ObservationError(
@@ -425,20 +461,23 @@ class _ObservationRecorder:
         started_s = time.perf_counter()
         try:
             observation = _within(
-                self._deadline_s, "build(request)", self._builder.build, request
+                self._deadline_s, f"build(request){model}", self._builder.build, request
             )
         except _Overrun as overrun:
             log.overrun = str(overrun)
             raise ObservationError(log.overrun) from None
+        except _Exited as exited:
+            log.problems.append(str(exited))
+            raise ObservationError(str(exited)) from None
         except Exception as exc:
-            log.problems.append(f"build(request) raised {type(exc).__name__}: {exc}")
+            log.problems.append(f"build(request){model} raised {type(exc).__name__}: {exc}")
             raise
         finally:
             log.slowest_s = max(log.slowest_s, time.perf_counter() - started_s)
         try:
             checked_observation(observation, request)
         except ObservationError as exc:
-            log.problems.append(str(exc))
+            log.problems.append(f"{exc}{model}" if model else str(exc))
             return observation
         log.emitted += 1
         missing = missing_contract_lines(observation.prompt, request.contract)
@@ -469,7 +508,10 @@ class _ArbitrationRecorder:
         self._budget_s = budget_s
 
     def begin_episode(self) -> None:
-        self._within("begin_episode()", self._arbiter.begin_episode)
+        try:
+            self._within("begin_episode()", self._arbiter.begin_episode)
+        except _Exited as exited:
+            raise ArbitrationError(str(exited)) from None
 
     def arbitrate(self, request: ArbitrationRequest) -> VLAAssessment:
         log = self._log
@@ -477,6 +519,10 @@ class _ArbitrationRecorder:
             answer = self._within("arbitrate(request)", self._arbiter.arbitrate, request)
         except ControlStepOverrun:
             raise
+        except _Exited as exited:
+            # The runtime records an ArbitrationError's message as it stands.
+            log.problems.append(str(exited))
+            raise ArbitrationError(str(exited)) from None
         except Exception as exc:
             log.problems.append(f"arbitrate(request) raised {type(exc).__name__}: {exc}")
             raise
@@ -492,6 +538,9 @@ class _ArbitrationRecorder:
             answer = self._within("review(request)", self._arbiter.review, request)
         except ControlStepOverrun:
             raise
+        except _Exited as exited:
+            log.problems.append(str(exited))
+            raise ArbitrationError(str(exited)) from None
         except Exception as exc:
             log.problems.append(f"review(request) raised {type(exc).__name__}: {exc}")
             raise
@@ -529,16 +578,19 @@ def _within(
     """Return ``function(*arguments)``, or raise _Overrun once ``deadline_s`` passes.
 
     ``call`` names the submitted call and ``limit`` what the deadline is, as the
-    overrun message quotes them. The call runs on a daemon thread that is
-    abandoned, never awaited, if it overruns, so a submission that never returns
-    cannot hang the gate run.
+    overrun and exit messages quote them. The call runs on a daemon thread that
+    is abandoned, never awaited, if it overruns, so a submission that never
+    returns cannot hang the gate run.
     """
     outcome: dict[str, Any] = {}
 
     def run() -> None:
         try:
             outcome["value"] = function(*arguments)
-        except Exception as exc:
+        except KeyboardInterrupt:
+            raise
+        except BaseException as exc:
+            # A thread ends quietly on sys.exit(), so keep it to report.
             outcome["error"] = exc
 
     thread = threading.Thread(target=run, name="gate-submission-call", daemon=True)
@@ -546,8 +598,13 @@ def _within(
     thread.join(deadline_s)
     if thread.is_alive():
         raise _Overrun(f"{call} had not returned after {deadline_s:g} s, {limit}")
-    if "error" in outcome:
-        raise outcome["error"]
+    error = outcome.get("error")
+    if isinstance(error, Exception):
+        raise error
+    if error is not None:
+        # Never re-raised: on DriveBench's inference worker, the scheduler would
+        # hand the exit on to the control loop and stop the run.
+        raise _Exited(f"{call} raised {type(error).__name__}: {error}")
     if "value" not in outcome:
         raise ObservationError("the call ended without returning or raising an exception")
     return outcome["value"]
@@ -571,8 +628,6 @@ def run_gates(
     scenarios = select_gate_scenarios(plan, scenario_ids)
     results: list[GateResult] = []
     score: Score | None = None
-    # A plan that scores its routes counts an incomplete route against its score.
-    route_gate = ROUTE_COMPLETES if plan.no_score is not None else RUNS_FINISH
     # Only drives that ask the model build observations and arbitrate
     # assessments; the overlay cannot switch the VLA subsystem on or off.
     model_gates = (
@@ -597,19 +652,24 @@ def run_gates(
         results.append(GateResult(SUBMISSION_LOADS, GateStatus.FAILED, str(exc)))
         results.extend(
             GateResult(gate, GateStatus.NOT_RUN, "the submission did not load")
-            for gate in (BOUNDED_OUTPUTS, route_gate, *model_gates, *fault_gates)
+            for gate in (BOUNDED_OUTPUTS, RUNS_FINISH, *model_gates, *fault_gates)
         )
     else:
         drives = [
-            _drive(config, scenario, factory, observation_factory, arbitration_factory)
+            _drive(
+                config,
+                scenario,
+                factory,
+                observation_factory,
+                arbitration_factory,
+                observation_models=plan.observation_models,
+            )
             for scenario in scenarios
         ]
         routes = [drive for drive in drives if not drive.scenario.is_fault_scenario]
         results.append(GateResult(SUBMISSION_LOADS, GateStatus.PASSED))
         results.append(_bounded_outputs(drives))
-        results.append(
-            _route_completes(routes) if plan.no_score is not None else _runs_finish(routes)
-        )
+        results.append(_runs_finish(routes, scored=plan.no_score is None))
         if model_gates:
             results.append(_valid_observations(drives))
             results.append(
@@ -633,7 +693,7 @@ def run_gates(
         plan_id=plan.plan_id,
         visibility=plan.visibility,
         submission=str(submission),
-        submission_sha256=_file_hashes(submission),
+        submission_sha256=file_hashes(submission),
         results=tuple(results),
         score=score,
         no_score=plan.no_score,
@@ -748,6 +808,8 @@ def _drive(
     factory: VehicleControllerFactory,
     observation_factory: ObservationBuilderFactory | None = None,
     arbitration_factory: AssessmentArbiterFactory | None = None,
+    *,
+    observation_models: tuple[str, ...] = (),
 ) -> _Drive:
     run_config = copy.deepcopy(config)
     simulator = run_config.simulator
@@ -784,7 +846,9 @@ def _drive(
         except _Overrun as overrun:
             observations.overrun = str(overrun)
             raise ObservationError(observations.overrun) from None
-        return _ObservationRecorder(builder, observations, deadline_s=deadline_s)
+        return _ObservationRecorder(
+            builder, observations, deadline_s=deadline_s, models=observation_models
+        )
 
     arbitrations = None if arbitration_factory is None else _ArbitrationLog()
 
@@ -816,8 +880,11 @@ def _drive(
                 None if arbitration_factory is None else recording_arbitration_factory
             ),
         )
-    except Exception as exc:
-        # Submitted code may raise anything; the route gate reports it.
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        # Submitted code may raise anything or call sys.exit(); the route gate
+        # reports it. Only an operator's interrupt stops the gate run.
         return _Drive(
             scenario, None, exc, _recorded_ticks(recorders), observations, arbitrations
         )
@@ -858,11 +925,12 @@ def _bounded_outputs(drives: list[_Drive]) -> GateResult:
     )
 
 
-def _runs_finish(drives: list[_Drive]) -> GateResult:
-    """The route gate of a plan that scores its routes: only an error fails it.
+def _runs_finish(drives: list[_Drive], *, scored: bool) -> GateResult:
+    """The route gate: only an error fails it (ADR-0006).
 
-    A route that crashes, leaves the road, or does not arrive earns no driving
-    credit instead, and its score says why.
+    A route that crashes, leaves the road, or does not arrive is how the
+    controller drove, never a gate. Where routes are scored it earns no driving
+    credit, and the score says why; where they are not, it costs nothing.
     """
     if not drives:
         return GateResult(RUNS_FINISH, GateStatus.NOT_RUN, "no route scenario was driven")
@@ -876,24 +944,12 @@ def _runs_finish(drives: list[_Drive]) -> GateResult:
     detail = f"{_count(len(drives), 'route')} driven without an error"
     incomplete = [problem for drive in drives if (problem := _route_problem(drive))]
     if incomplete:
+        cost = "so earned no driving credit" if scored else "which this run does not score"
         detail += (
-            f"; {_count(len(incomplete), 'route')} did not complete, so earned no "
-            "driving credit: " + "; ".join(incomplete)
+            f"; {_count(len(incomplete), 'route')} did not complete, {cost}: "
+            + "; ".join(incomplete)
         )
     return GateResult(RUNS_FINISH, GateStatus.PASSED, detail)
-
-
-def _route_completes(drives: list[_Drive]) -> GateResult:
-    if not drives:
-        return GateResult(ROUTE_COMPLETES, GateStatus.NOT_RUN, "no route scenario was driven")
-    problems = [problem for drive in drives if (problem := _route_problem(drive))]
-    if problems:
-        return GateResult(ROUTE_COMPLETES, GateStatus.FAILED, "; ".join(problems))
-    return GateResult(
-        ROUTE_COMPLETES,
-        GateStatus.PASSED,
-        f"{_count(len(drives), 'scenario')} completed",
-    )
 
 
 def _valid_observations(drives: list[_Drive]) -> GateResult:
@@ -915,6 +971,12 @@ def _valid_observations(drives: list[_Drive]) -> GateResult:
     emitted = sum(log.emitted for log in logs)
     without_contract = sum(log.without_contract for log in logs)
     detail = f"{_count(emitted, 'observation')} built, each with a valid frame"
+    models = next((log.models for log in logs if log.models), ())
+    if models:
+        detail = (
+            f"{_count(emitted, 'observation')} built, every request also for "
+            f"{', '.join(models)}, each with a valid frame"
+        )
     if not without_contract:
         return GateResult(
             VALID_OBSERVATIONS,
@@ -985,31 +1047,43 @@ def _monotone_restriction(drives: list[_Drive]) -> GateResult:
 
 
 def _faults_survived(drives: list[_Drive]) -> GateResult:
+    """The fault gate: only a run an error stopped fails it.
+
+    A fault scenario need not arrive, and one that crashes or leaves the road is
+    how the controller drove, which no gate judges (ADR-0006): the detail says so.
+    """
     if not drives:
         return GateResult(FAULTS_SURVIVED, GateStatus.NOT_RUN, "no fault scenario was driven")
-    problems = [problem for drive in drives if (problem := _fault_problem(drive))]
-    if problems:
-        return GateResult(FAULTS_SURVIVED, GateStatus.FAILED, "; ".join(problems))
+    stopped = [
+        f"{drive.scenario.scenario_id}: the run stopped: "
+        f"{type(drive.error).__name__}: {drive.error}"
+        for drive in drives
+        if drive.error is not None
+    ]
+    if stopped:
+        return GateResult(FAULTS_SURVIVED, GateStatus.FAILED, "; ".join(stopped))
     kinds = sorted({fault.kind.value for drive in drives for fault in drive.scenario.faults})
-    return GateResult(
-        FAULTS_SURVIVED,
-        GateStatus.PASSED,
-        f"{_count(len(drives), 'fault scenario')} driven without a crash, an off-road "
-        f"exit, or a stopped run, under {', '.join(kinds)}",
+    detail = (
+        f"{_count(len(drives), 'fault scenario')} driven without a stopped run, "
+        f"under {', '.join(kinds)}"
     )
+    incidents = [incident for drive in drives if (incident := _fault_incident(drive))]
+    if incidents:
+        detail += (
+            f"; {_count(len(incidents), 'fault scenario')} crashed or left the road, "
+            "which fails no gate: " + "; ".join(incidents)
+        )
+    return GateResult(FAULTS_SURVIVED, GateStatus.PASSED, detail)
 
 
-def _fault_problem(drive: _Drive) -> str | None:
-    """Why a fault scenario broke the run; arriving is not required."""
-    scenario = drive.scenario.scenario_id
-    if drive.error is not None:
-        return f"{scenario}: the run stopped: {type(drive.error).__name__}: {drive.error}"
+def _fault_incident(drive: _Drive) -> str | None:
+    """How a fault scenario that ran to its end went wrong, if it did."""
     summary = drive.summary
     assert summary is not None
     if summary.crashed:
-        return f"{scenario}: crashed"
+        return f"{drive.scenario.scenario_id}: crashed"
     if summary.went_off_road:
-        return f"{scenario}: left the road"
+        return f"{drive.scenario.scenario_id}: left the road"
     return None
 
 
@@ -1175,7 +1249,9 @@ def _count(number: int, noun: str) -> str:
     return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
 
 
-def _file_hashes(directory: Path) -> dict[str, str]:
+def file_hashes(directory: Path) -> dict[str, str]:
+    """SHA-256 of each file in a submission directory, as a gate report records
+    them; grading compares its own with these, so both use this one function."""
     if not directory.is_dir():
         return {}
     return {
@@ -1190,18 +1266,24 @@ def load_gate_plan(path: Path | str) -> GatePlan:
     if not isinstance(value, dict):
         raise ValueError("gate manifest must be a mapping")
     _reject_unknown(
-        value, {"version", "id", "visibility", "no_score", "scenarios"}, "gate manifest"
+        value,
+        {"version", "id", "visibility", "no_score", "observation_models", "scenarios"},
+        "gate manifest",
     )
     if value.get("version") != GATE_MANIFEST_VERSION:
         raise ValueError(f"gate manifest version must be {GATE_MANIFEST_VERSION}")
     raw_scenarios = value.get("scenarios")
     if not isinstance(raw_scenarios, list):
         raise ValueError("gate manifest scenarios must be a list")
+    models = value.get("observation_models", [])
+    if not isinstance(models, list):
+        raise ValueError("gate manifest observation_models must be a list")
     return GatePlan(
         plan_id=value.get("id"),
         visibility=value.get("visibility"),
         scenarios=tuple(_scenario(item) for item in raw_scenarios),
         no_score=value.get("no_score"),
+        observation_models=tuple(models),
     )
 
 

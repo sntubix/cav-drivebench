@@ -19,7 +19,8 @@ acceptance sequence:
 | Platform | Official path | Current status |
 | --- | --- | --- |
 | Any | checked fixtures | supported deterministic development path |
-| Apple Silicon | MLX-VLM | supported local VLM server |
+| Apple Silicon | `llama.cpp`/`llama-server` on Metal | the pinned path for Assignment 2's marked work |
+| Apple Silicon | MLX-VLM | supported local VLM server, for demos and plumbing checks |
 | Linux | `llama.cpp`/`llama-server` | supported engine; pinned native candidate and acceptance validator available |
 | Course cloud | Vertex | supported instructor-funded coursework path |
 
@@ -101,7 +102,11 @@ redacted from diagnostics.
 
 Structured output is an explicit test dimension. A supporting server receives a
 strict JSON Schema when `structured_output: true`; the local decoder remains
-authoritative in either mode.
+authoritative in either mode. `llama-server` `b10771` holds an answer to the
+schema's shape but not to its numeric bounds: under it, SmolVLM still returned
+confidences of 1.006 and -1.007 and a target speed of -0.026 m/s, on macOS and
+Linux, on CPU and GPU. The decoder rejects such an answer, so it counts as one
+that does not decode.
 
 `temperature` is sent with every request; 0 asks for the most likely answer each
 time. The `llama-server` profiles for SmolVLM-256M and the pinned Qwen3-VL-2B
@@ -112,7 +117,11 @@ Under one seed the same input gets the same answer, so pass `--seed n` to
 `probe` or `run`, which sends seed n with every request, rerun under a new one
 each time, and report a live figure as the median and range over those runs.
 `seed`, when set, fixes the server's sampling so that a sampled run can be
-repeated exactly. Both are instructor-owned
+repeated exactly on the same machine, provided the server reads each prompt in
+full: `llama-server` reuses the prompts it has cached, and an answer that
+reuses one can differ from the first answer to the same request and seed.
+Serve with `--no-cache-prompt` when runs must repeat exactly, as Assignment 2's
+grading does. Both are instructor-owned
 under `vla.http`, so `agent.yaml` cannot set them.
 
 </details>
@@ -135,8 +144,9 @@ The archive digest comes from the
 and the model files come from the immutable
 [Qwen GGUF revision](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/tree/d38d39f5972e27cd58023f9b1e9f994b0c85ca47).
 
-On a native Ubuntu x86_64 checkout, install `curl`, `Xvfb`, and GNU `time`, then
-download the three artifacts into the ignored `tmp/` area:
+On a native Ubuntu x86_64 checkout, install `curl` and GNU `time`, then
+download the three artifacts into the ignored `tmp/` area. `Xvfb` is optional:
+see the render path below.
 
 ```bash
 mkdir -p tmp/native-vlm/llama-b10771
@@ -179,11 +189,16 @@ LLAMA_SERVER=$(find tmp/native-vlm/llama-b10771 \
 
 The validator refuses WSL, containers, non-Ubuntu/non-x86_64 hosts, dirty
 checkouts, version drift, and hash drift. It creates the frozen native `uv`
-environment, runs the native simulator baseline, captures one probe corpus, and
+environment and chooses where MetaDrive renders: on a private Xvfb display when
+`Xvfb` is installed and draws a valid camera frame, and otherwise with no
+display at all, where Panda3D renders through its headless EGL pipe, as it does
+on a GPU server without X. Either way it records the Panda3D pipe and OpenGL
+driver that drew the frame in `render/`, and it refuses only when neither path
+draws one. It then runs the native simulator baseline, captures one probe corpus, and
 reuses those exact inputs for schema-off and schema-on inference. Schema-off
 decoding is evidence only, recorded in each round's `acceptance.json`; every
 schema-on scene must decode. It then runs a
-paced, request-capped closed loop that must receive successful responses, grant
+paced closed loop of 100 steps that must receive successful responses, grant
 model authority, avoid runtime errors/collision/off-road termination, and replay
 with zero mismatches. The complete model sequence is repeated after a clean
 server restart. Timing, peak simulator RSS, sampled server RSS, commands, logs,
@@ -193,9 +208,20 @@ earlier run.
 
 Probe semantic scores remain evidence for model-quality work; they do not turn a
 working transport/runtime qualification into a failure. CPU-only settings make
-the accepted baseline independent of a discrete GPU. Accelerated variants need
+the accepted baseline independent of a discrete GPU, and they are how a machine
+without one serves both models. The Qwen rounds also need each answer within the
+closed loop's pacing, 2 s of simulated time at a quarter of real time, and a
+CPU-only server has so far answered Qwen too slowly for that, so on such a
+machine those rounds fail while the baseline passes. Accelerated variants need
 their own complete evidence bundle before they become supported profiles. The
 server and model remain outside the DriveBench `uv` environment.
+
+`--vulkan` produces that bundle for
+[the Vulkan build](#gpu-the-vulkan-build-of-the-same-pin): pass it with that
+archive and the `llama-server` extracted from it. Every round then serves with
+`--n-gpu-layers 99` in place of `--n-gpu-layers 0 --no-mmproj-offload`, the
+validator refuses a build that lists no Vulkan device, and `host.json` records
+the GPU, its driver, and the devices the build lists.
 
 ### SmolVLM on the same server: the Assignment 2 experiment
 
@@ -234,7 +260,112 @@ it with zero mismatches. Model authority is recorded but not required: the
 safety floor is expected to reject SmolVLM's answers for low confidence. The
 result never changes the validator's overall result.
 
+### Serving a model for Assignment 2
+
+Assignment 2 serves one model at a time on port 8000, with the flags the
+validator uses and the files downloaded above. For SmolVLM:
+
+```bash
+LLAMA_SERVER=$(find tmp/native-vlm/llama-b10771 -type f -name llama-server -print -quit)
+"${LLAMA_SERVER}" -m tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf \
+  --mmproj tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf \
+  --host 127.0.0.1 --port 8000 --alias drivebench-smolvlm-256m-q8-0 \
+  --ctx-size 4096 --threads 4 --n-gpu-layers 0 --no-mmproj-offload --parallel 1 \
+  --temp 0 --seed 0
+```
+
+For Qwen, pass `tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf` and
+`--mmproj tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf` instead, with
+`--alias drivebench-qwen3-vl-2b-q4-k-m` and `--image-min-tokens 1024`. Each
+Assignment 2 configuration names the alias it expects.
+
+### GPU: the Vulkan build of the same pin
+
+`b10771` has no Linux CUDA build. Its Vulkan build runs the same pinned model
+files on a GPU through the vendor's Vulkan driver, NVIDIA's included:
+
+- `llama-b10771-bin-ubuntu-vulkan-x64.tar.gz`, SHA-256
+  `35d98f9c60dcd6c1af2267990b33fcd981a011f8b902dcbb0d5f280bf807bd53`.
+
+Download, check, and unpack it as the CPU archive above, into
+`tmp/native-vlm/llama-b10771-vulkan`, and serve with the same flags, putting
+`--n-gpu-layers 99` in place of `--n-gpu-layers 0 --no-mmproj-offload`.
+Assignment 2 is graded on this build. On an NVIDIA GPU it honours the request's
+seed and, with `--no-cache-prompt`, gives the same request and seed the same
+answer however often it is asked, as the CPU build does; the answers
+themselves differ from the CPU build's, as they differ between machines. The
+first request after installing is slow while the driver compiles its shaders.
+It is a supported profile: the validator's bundle for it, made with `--vulkan`,
+is successful, both Qwen rounds included.
+
+### Apple silicon: the macOS arm64 build of the same pin
+
+On Apple silicon, do all of Assignment 2's marked work on `b10771`'s macOS arm64
+build, on Metal, serving the same pinned model files:
+
+- `llama-b10771-bin-macos-arm64.tar.gz`, SHA-256
+  `371bb6c01543c8b748e1404e23a5cb09b2bc7484df9b90febf5c068f04adec33`.
+
+Download the archive and the four model files, with the `curl` commands above
+for the model files, then check them all. The validator refuses a non-Linux
+host, so `shasum` checks them here:
+
+```bash
+mkdir -p tmp/native-vlm/llama-b10771-macos
+
+curl --fail --location \
+  --output tmp/native-vlm/llama-b10771-bin-macos-arm64.tar.gz \
+  https://github.com/ggml-org/llama.cpp/releases/download/b10771/llama-b10771-bin-macos-arm64.tar.gz
+printf '%s  %s\n' \
+  371bb6c01543c8b748e1404e23a5cb09b2bc7484df9b90febf5c068f04adec33 \
+  tmp/native-vlm/llama-b10771-bin-macos-arm64.tar.gz | shasum -a 256 -c
+tar -xzf tmp/native-vlm/llama-b10771-bin-macos-arm64.tar.gz \
+  -C tmp/native-vlm/llama-b10771-macos
+
+printf '%s  %s\n%s  %s\n%s  %s\n%s  %s\n' \
+  089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae \
+  tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
+  f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82 \
+  tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf \
+  2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65 \
+  tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf \
+  7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd \
+  tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf | shasum -a 256 -c
+```
+
+Serve one model at a time on port 8000, as above, with every layer on Metal and
+the prompt cache off. For SmolVLM:
+
+```bash
+LLAMA_SERVER=$(find tmp/native-vlm/llama-b10771-macos -type f -name llama-server -print -quit)
+"${LLAMA_SERVER}" -m tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf \
+  --mmproj tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf \
+  --host 127.0.0.1 --port 8000 --alias drivebench-smolvlm-256m-q8-0 \
+  --ctx-size 4096 --threads 4 --n-gpu-layers 99 --parallel 1 \
+  --no-cache-prompt --temp 0 --seed 0
+```
+
+For Qwen, pass `tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf` and
+`--mmproj tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf` instead, with
+`--alias drivebench-qwen3-vl-2b-q4-k-m` and `--image-min-tokens 1024`.
+`"${LLAMA_SERVER}" --list-devices` should list a Metal device. The
+`vla-probe-*-llama` configurations of the brief run against this server as they
+are, so `--seed n` works as on Linux: with `--no-cache-prompt` the same request
+and seed get the same answer. A prompt counts as many tokens as on the grading
+server, and the measures point the way they do there, though the answers
+themselves differ, as they differ between machines. Measure your own latency, as
+the brief's "Choosing a realtime factor" says. The acceptance validator does not
+cover this build.
+
 ## Apple Silicon local server: MLX-VLM
+
+MLX serves demos and plumbing checks only, never Assignment 2's marked work. Its
+checkpoints are not the pinned GGUF files and answer differently, so observation
+figures from MLX do not predict the marks: syntax and scene interpretation can
+point the opposite way from the pinned `llama-server`, and SmolVLM has no MLX
+profile under JSON Schema output. Use
+[the macOS arm64 build](#apple-silicon-the-macos-arm64-build-of-the-same-pin) for
+those.
 
 Keep the MLX runtime outside the project environment. Start the supported Qwen
 checkpoint on port 8080:
@@ -292,9 +423,9 @@ the llama.cpp path remains the baseline.
 ## Vertex course provider
 
 Vertex is part of the required coursework. Instructors provide the account and
-course project to use, and apply provider-side cost controls. The supplied
-DriveBench profiles add a per-run request cap; students must not remove or raise
-that cap.
+course project to use, and apply provider-side cost controls. The Vertex
+profiles add a per-run request cap, which local-server profiles do not carry;
+students must not remove or raise it.
 
 Install the optional cloud dependencies:
 
@@ -389,25 +520,25 @@ workflow.
 
 ## In-process model option
 
-An experiment may inject a `ModelProvider` factory and keep generation in the
-simulator process:
+An experiment may build the scheduler around its own `ModelProvider` and keep
+generation in the simulator process:
 
 ```python
-def provider_factory(settings):
-    return ResearchModelProvider(
-        model_id=settings.http.model_id,
-        max_tokens=settings.http.max_tokens,
-    )
+from metadrive_starter.vla import VLAInferencePipeline, VLAInferenceScheduler
 
-with build_vla_scheduler(
-    config.vla,
-    http_provider_factory=provider_factory,
+provider = ResearchModelProvider(
+    model_id=config.vla.http.model_id,
+    max_tokens=config.vla.http.max_tokens,
+)
+with VLAInferenceScheduler(
+    VLAInferencePipeline(provider),
+    minimum_interval_s=config.vla.minimum_interval_s,
 ) as scheduler:
     ...
 ```
 
-The factory receives validated settings and must return an object implementing
-`generate(ModelRequest) -> ModelResponse`. YAML never imports arbitrary classes.
+The provider must implement `generate(ModelRequest) -> ModelResponse`. YAML
+never imports arbitrary classes.
 In-process execution is an experiment boundary, not the default course runtime:
 it shares failures and memory pressure with the simulator and cannot be forcibly
 cancelled safely.

@@ -2,15 +2,13 @@
 
 [← DriveBench README](../../README.md) · [PID lab notebook](pid-lab.ipynb)
 
+> Assignment weight: **15%** The course calendar gives the deadline, and late
+submissions are not accepted. Run all commands from the repository root.
+
 You complete the PID controller that turns the planner's targets into steering,
 throttle, and brake, and you tune its gains. Every command the car receives
 comes out of this controller, in this assignment and in every later one, where a
 vision-language model only advises it.
-
-Assignment 1 carries 15% of the assignment marks, which together make up 60% of
-the project grade; the oral defence at the end of the project makes up the
-other 40%. The course calendar gives the deadline, and late submissions are not
-accepted. Run all commands from the repository root.
 
 ## Steps
 

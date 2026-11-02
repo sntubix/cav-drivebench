@@ -1,0 +1,46 @@
+{
+  "lanes": {
+    "left": {
+      "available": false,
+      "observed_clear": false
+    },
+    "right": {
+      "available": true,
+      "observed_clear": false
+    }
+  },
+  "objects": [
+    {
+      "confidence": 1.0,
+      "distance_m": 16.0,
+      "estimated_speed_mps": 0.006,
+      "id": "probe-all-lanes-blocked-right-lane-blocker",
+      "in_path": false,
+      "kind": "vehicle",
+      "relative_location": "front_right",
+      "relative_speed_mps": -0.02
+    },
+    {
+      "confidence": 1.0,
+      "distance_m": 19.0,
+      "estimated_speed_mps": 0.006,
+      "id": "probe-all-lanes-blocked-far-right-lane-blocker",
+      "in_path": false,
+      "kind": "vehicle",
+      "relative_location": "front_right",
+      "relative_speed_mps": -0.02
+    },
+    {
+      "confidence": 1.0,
+      "distance_m": 22.0,
+      "estimated_speed_mps": 0.006,
+      "id": "probe-all-lanes-blocked-stopped-lead",
+      "in_path": true,
+      "kind": "vehicle",
+      "relative_location": "front",
+      "relative_speed_mps": -0.02
+    }
+  ],
+  "traffic_controls": [],
+  "valid": true
+}

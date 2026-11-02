@@ -1,0 +1,55 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "989810d9e5f17c515c033acfc9df9caccf36cbbca3ca5e4e3a614d701f85e1d1",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "d9359b4831f1ce64aa525d38e095ad82ab1a81e7e94c0251172b14293d930050",
+    "rgb_sha256": "d9f249c763e1210f5ac0d26b6d4a2300a337b877afad3bfe2a4c42a338de649a",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "2d62c28d939daf18b162b1212e3a7249d63ec93d7b99f94661a13271e68b11d3",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-curved-road-seed-0"
+  },
+  "scenario": {
+    "description": "Clear curved road for checking bend and lane-boundary interpretation.",
+    "evaluation": {
+      "acceptable_actions": [
+        "KEEP_LANE",
+        "SLOW_DOWN"
+      ],
+      "maximum_target_speed_mps": 9.722222222222221,
+      "minimum_target_speed_mps": 4.166666666666667,
+      "raw_speed_required": false,
+      "required_hazards": [
+        {
+          "relative_location": "front",
+          "type": "road_feature"
+        }
+      ]
+    },
+    "expected_visual": "A visible bend with continuous road edges and legible lane markings.",
+    "id": "curved-road",
+    "map": "C",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 4
+}

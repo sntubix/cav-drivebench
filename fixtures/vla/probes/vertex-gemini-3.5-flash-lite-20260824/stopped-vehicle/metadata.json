@@ -1,0 +1,53 @@
+{
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "png_sha256": "73f5c87ca2ec756adfd377bb938722218349ef02b4c30d555da8d4875f4be689",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "024c8eac47bfadca33c76bcb223e0b3c63ff7415257e46308fabdbf52f588971",
+    "rgb_sha256": "3218b20a55cdecec3ac1277878aebdd946f02bb5eff8fc2777929cc5cba9be3c",
+    "scene_context_included": false,
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v1",
+    "request_id": "probe-stopped-vehicle-seed-0"
+  },
+  "scenario": {
+    "description": "A stationary lead vehicle directly on the ego route.",
+    "evaluation": {
+      "acceptable_actions": [
+        "FOLLOW",
+        "SLOW_DOWN",
+        "STOP"
+      ],
+      "maximum_target_speed_mps": 5.555555555555555,
+      "minimum_target_speed_mps": 0.0
+    },
+    "expected_visual": "One stopped car clearly visible in the ego lane at decision distance.",
+    "id": "stopped-vehicle",
+    "map": "S",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": [
+      {
+        "distance_m": 22.0,
+        "id": "lead-car",
+        "kind": "car",
+        "lane_offset": 0,
+        "lateral_m": 0.0
+      }
+    ]
+  },
+  "schema_version": 2
+}

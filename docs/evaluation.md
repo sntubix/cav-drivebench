@@ -34,7 +34,7 @@ Every scenario directory contains:
 - `scene.json`: the bounded local-scene context measured at capture, which
   DriveBench's own prompt embeds and a team's may not;
 - `metadata.json`: placement, dimensions, timing, hashes, request identity,
-  parsed assessment/command, rubric layers, and outcome;
+  parsed assessment/command, semantic evaluation layers, and outcome;
 - `raw_response.txt`: untouched provider output when inference returns text.
 
 The artifact root also contains `summary.json`. Output directories are created
@@ -61,7 +61,9 @@ uv run metadrive-starter probe \
 Inference remains open-loop: assessments and locally derived commands are saved
 but never applied to the vehicle. Transport or parsing failures still produce
 metadata and retain raw model text. The command exits non-zero if any selected
-scenario fails technically.
+scenario fails technically. Assignment 2's marks come from this probe, run on
+hidden scenes with your submission, as its brief's "How you are marked" states;
+no mark comes from a closed-loop run.
 
 Semantic evaluation reports perception, tactical-action, and raw-speed results
 separately. Raw speed is diagnostic unless a manifest explicitly makes it part
@@ -98,12 +100,19 @@ Replay verifies the saved RGB, PNG, prompt, and scene hashes. Artifacts from
 before team observations (schema 2 and 3) must also still embed their exact
 `LOCAL_SCENE_CONTEXT`. It sends the saved observation's original bytes, whoever
 built it, and writes responses to a new directory; the source evidence is never
-changed. `--submission` does not combine with `--replay-from`.
+changed.
+
+With `--submission`, `--replay-from` asks instead through your `observation.py`:
+it needs a recorded catalog, whose scenes keep their measured `local_scene.json`,
+such as those in `fixtures/vla/probes/`, and builds each observation from the
+recorded frame and scene, without MetaDrive.
 
 <details>
 <summary>Lane-choice provider comparison</summary>
 
-Capture the shared lane-choice inputs once:
+Capture the shared lane-choice inputs once. The profile below is an MLX one,
+for demos and plumbing checks; its figures do not predict Assignment 2's marks,
+as [Model providers](model-providers.md#apple-silicon-local-server-mlx-vlm) says:
 
 ```bash
 uv run metadrive-starter probe \
@@ -124,7 +133,7 @@ uv run metadrive-starter probe \
 
 The first frame has a stationary lead and a clear right lane; only
 `CHANGE_LANE_RIGHT` is accepted. The second adds a right-lane blocker and accepts
-only `FOLLOW`, `SLOW_DOWN`, or `STOP`. Both require the relevant vehicle hazards.
+only `FOLLOW` or `STOP`. Both require the relevant vehicle hazards.
 This is evidence of model judgement, never vehicle authority.
 
 </details>
@@ -166,7 +175,9 @@ remains final.
 The Assignment 2 structural gates publish one fault scenario per kind in
 [`configs/gates-assignment-2.yaml`](../configs/gates-assignment-2.yaml), in the same form, beside the routes. A fault
 scenario need not arrive. Its gate, "faults never break the run", fails only on a
-crash, an off-road exit, or a run that stopped:
+run an error stopped; a crash or an off-road exit is how the controller drove, so it
+is reported and fails no gate. The gates drive with a recorded answer, so they
+never ask a model:
 
 ```bash
 uv run metadrive-starter gates \
@@ -175,8 +186,9 @@ uv run metadrive-starter gates \
 ```
 
 Grading uses other timings, maps, and combinations of the same kinds. The run
-reports no score, because Assignment 2 is marked from hidden runs as its rubric
-says. The manifest's `no_score` text says so in the report.
+reports no score, because Assignment 2 is marked from the open-loop probe on
+hidden scenes, as its brief says. The manifest's `no_score` text says so in the
+report.
 
 ### Deterministic lane-change acceptance
 
@@ -282,7 +294,8 @@ Pass event logs or directories, which are searched for `*.jsonl`; `--json` print
 the same report as JSON. It reports hazard precision and recall, recall of
 hazards in the ego path, how often an assessment agrees with its scene, and
 confidence binned against that agreement. Assessments from fixtures and replays
-are reported apart from live model calls, never pooled with them. It reads logs
+are reported apart from live model calls, never pooled with them, and each
+fixture apart from every other, even when two share a model id. It reads logs
 only, and runs neither the simulator nor a model.
 
 <details>

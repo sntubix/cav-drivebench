@@ -1,0 +1,15 @@
+{
+  "lanes": {
+    "left": {
+      "available": false,
+      "observed_clear": false
+    },
+    "right": {
+      "available": true,
+      "observed_clear": true
+    }
+  },
+  "objects": [],
+  "traffic_controls": [],
+  "valid": true
+}

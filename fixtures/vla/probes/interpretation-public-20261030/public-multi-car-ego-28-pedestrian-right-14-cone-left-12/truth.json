@@ -1,0 +1,101 @@
+{
+  "id": "public-multi-car-ego-28-pedestrian-right-14-cone-left-12",
+  "group": "multi",
+  "map": "SS",
+  "seed": 6,
+  "spawn_longitude_m": null,
+  "tags": {
+    "count": 3
+  },
+  "timestamp_s": 0.1,
+  "ego_speed_mps": 0.02603090554482922,
+  "ego_lane": 1,
+  "lane_count": 3,
+  "left_lane_available": true,
+  "right_lane_available": true,
+  "lens_fov_deg": [
+    60.0,
+    35.9833984375
+  ],
+  "width": 512,
+  "height": 288,
+  "png_sha256": "b6f527b41bff4b14945bd0a03f38e215110d6bf154b475cb7d7ed5ff05d44336",
+  "objects": [
+    {
+      "id": "a",
+      "spec": {
+        "id": "a",
+        "kind": "car",
+        "distance_m": 28.0,
+        "lane_offset": 0
+      },
+      "measured": true,
+      "object_id": "study-public-multi-car-ego-28-pedestrian-right-14-cone-left-12-a",
+      "kind": "vehicle",
+      "hazard_type": "vehicle",
+      "relative_location": "front",
+      "distance_m": 28.0,
+      "forward_m": 28.0,
+      "left_m": 0.0,
+      "in_path": true,
+      "lane_relation": "crossing",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        256.0,
+        172.3
+      ]
+    },
+    {
+      "id": "b",
+      "spec": {
+        "id": "b",
+        "kind": "pedestrian",
+        "distance_m": 14.0,
+        "lane_offset": 1
+      },
+      "measured": true,
+      "object_id": "study-public-multi-car-ego-28-pedestrian-right-14-cone-left-12-b",
+      "kind": "pedestrian",
+      "hazard_type": "pedestrian",
+      "relative_location": "front_right",
+      "distance_m": 14.0,
+      "forward_m": 14.0,
+      "left_m": -3.5,
+      "in_path": false,
+      "lane_relation": "unknown",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        373.7,
+        188.3
+      ]
+    },
+    {
+      "id": "c",
+      "spec": {
+        "id": "c",
+        "kind": "cone",
+        "distance_m": 12.0,
+        "lane_offset": -1
+      },
+      "measured": true,
+      "object_id": "study-public-multi-car-ego-28-pedestrian-right-14-cone-left-12-c",
+      "kind": "traffic_cone",
+      "hazard_type": "obstacle",
+      "relative_location": "front_left",
+      "distance_m": 11.999,
+      "forward_m": 12.0,
+      "left_m": 3.5,
+      "in_path": false,
+      "lane_relation": "unknown",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        117.3,
+        190.5
+      ]
+    }
+  ],
+  "unexpected_objects": []
+}

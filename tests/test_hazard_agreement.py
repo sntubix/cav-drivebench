@@ -284,10 +284,36 @@ def test_live_and_synthetic_evidence_are_never_pooled(tmp_path: Path) -> None:
     }
     assert by_class == {
         (EvidenceClass.LIVE, "vertex:gemini"): 1,
-        (EvidenceClass.SYNTHETIC, "fixture:gemini"): 2,
-        (EvidenceClass.SYNTHETIC, "fixture:synthetic-model"): 1,
+        (EvidenceClass.SYNTHETIC, "fixture:gemini:vertex-capture"): 2,
+        (EvidenceClass.SYNTHETIC, "fixture:synthetic-model:synthetic-keep-lane"): 1,
     }
     assert report.profiles[0].evidence is EvidenceClass.LIVE
+
+
+def test_fixtures_that_share_a_model_id_are_never_pooled(tmp_path: Path) -> None:
+    # The two semantic-failure fixtures share one model id. Pooled, one answer's
+    # constant confidence beside the other's gives a perfect AUROC (#31).
+    lead = _scene(_object())
+    for fixture_id, assessment in (
+        ("reports-the-car", _assessment(_hazard("vehicle", "front"), confidence=0.93)),
+        ("misses-the-car", _assessment(_hazard("vehicle", "rear"), confidence=0.4)),
+    ):
+        _write_run(
+            tmp_path / f"{fixture_id}.jsonl",
+            [(assessment, lead)] * 3,
+            provider="fixture",
+            model_id="synthetic-semantic-failure-model",
+            response_provider="synthetic_fixture",
+            fixture_id=fixture_id,
+        )
+
+    report = summarize(scan_event_logs([tmp_path]))
+
+    assert [(summary.profile, summary.assessments) for summary in report.profiles] == [
+        ("fixture:synthetic-semantic-failure-model:misses-the-car", 3),
+        ("fixture:synthetic-semantic-failure-model:reports-the-car", 3),
+    ]
+    assert [summary.calibration.auroc for summary in report.profiles] == [None, None]
 
 
 def test_summary_counts_precision_recall_and_agreement(tmp_path: Path) -> None:

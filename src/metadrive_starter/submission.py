@@ -210,7 +210,11 @@ def load_seam(
     def build(*arguments: Any) -> Any:
         try:
             product = entry(*arguments)
-        except Exception as exc:
+        except KeyboardInterrupt:
+            raise
+        except BaseException as exc:
+            # sys.exit() fails the load like any error; only an operator's
+            # interrupt stops the run.
             raise SubmissionError(
                 f"{path}: {spec.entry_call} raised {type(exc).__name__}: {exc}"
             ) from exc
@@ -234,7 +238,10 @@ def _import_submission(path: Path, package: str) -> ModuleType:
         # own __future__ flags out of the submitted code.
         code = compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
         exec(code, module.__dict__)
-    except Exception as exc:
+    except KeyboardInterrupt:
+        del sys.modules[module_name]
+        raise
+    except BaseException as exc:
         del sys.modules[module_name]
         raise SubmissionError(
             f"{path} failed to import: {type(exc).__name__}: {exc}"

@@ -1,0 +1,26 @@
+{
+  "lanes": {
+    "left": {
+      "available": true,
+      "observed_clear": false
+    },
+    "right": {
+      "available": true,
+      "observed_clear": true
+    }
+  },
+  "objects": [
+    {
+      "confidence": 1.0,
+      "distance_m": 12.999,
+      "estimated_speed_mps": 0.02,
+      "id": "study-public-single-cone-left-13m-a",
+      "in_path": false,
+      "kind": "traffic_cone",
+      "relative_location": "front_left",
+      "relative_speed_mps": -0.006
+    }
+  ],
+  "traffic_controls": [],
+  "valid": true
+}

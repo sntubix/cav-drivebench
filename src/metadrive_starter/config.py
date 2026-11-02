@@ -244,6 +244,39 @@ class FixtureProviderSettings:
 
 
 @dataclass(frozen=True)
+class RequestSceneFields:
+    """Which measured-scene fields an observation request carries (ADR-0008).
+
+    Instructor-owned: no agent.yaml may set them. A withheld field never reaches
+    the observation builder, so the model must find it in the image; arbitration
+    always receives the whole measured scene. The defaults carry all of it, as
+    DriveBench always has.
+    """
+
+    # Which lanes beside the ego lane exist, and the distances to the road's edges.
+    lanes: bool = True
+    # Whether each lane beside the ego lane is observed clear.
+    lane_clearance: bool = True
+    traffic_controls: bool = True
+    objects: bool = True
+
+    def __post_init__(self) -> None:
+        for item in fields(self):
+            if not isinstance(getattr(self, item.name), bool):
+                raise ValueError(f"vla.request_scene_fields.{item.name} must be a boolean")
+        if self.lane_clearance and not self.lanes:
+            raise ValueError(
+                "vla.request_scene_fields.lane_clearance needs lanes: a lane observed "
+                "clear is a lane that exists"
+            )
+
+    @property
+    def withheld(self) -> frozenset[str]:
+        """The fields the request leaves out."""
+        return frozenset(item.name for item in fields(self) if not getattr(self, item.name))
+
+
+@dataclass(frozen=True)
 class VLASettings:
     enabled: bool = False
     provider: str = "http"
@@ -259,6 +292,7 @@ class VLASettings:
     http: HTTPProviderSettings = field(default_factory=HTTPProviderSettings)
     vertex: VertexProviderSettings = field(default_factory=VertexProviderSettings)
     fixture: FixtureProviderSettings = field(default_factory=FixtureProviderSettings)
+    request_scene_fields: RequestSceneFields = field(default_factory=RequestSceneFields)
 
     def __post_init__(self) -> None:
         if not isinstance(self.enabled, bool):
@@ -298,6 +332,18 @@ class VLASettings:
             raise ValueError("vla.vertex must be Vertex provider settings")
         if not isinstance(self.fixture, FixtureProviderSettings):
             raise ValueError("vla.fixture must be Fixture provider settings")
+        if not isinstance(self.request_scene_fields, RequestSceneFields):
+            raise ValueError("vla.request_scene_fields must be request scene field settings")
+
+    @property
+    def requested_model_id(self) -> str | None:
+        """The model requests go to, as the selected provider names it; None for
+        recorded answers, which stand in for no model."""
+        if self.provider == "http":
+            return self.http.model_id
+        if self.provider == "vertex":
+            return self.vertex.model_id
+        return None
 
 
 @dataclass(frozen=True)
@@ -645,7 +691,8 @@ class AppConfig:
 
 def load_config(path: Path | str = "configs/default.yaml") -> AppConfig:
     config_path = Path(path)
-    data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
+    # A missing file raises: a mistyped path must never run on the defaults.
+    data = yaml.safe_load(config_path.read_text())
     _refuse_pid_values(data or {}, config_path)
     return config_from_dict(data or {})
 
@@ -672,15 +719,17 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
     http = HTTPProviderSettings(**vla_data.get("http", {}))
     vertex = VertexProviderSettings(**vla_data.get("vertex", {}))
     fixture = FixtureProviderSettings(**vla_data.get("fixture", {}))
+    request_scene_fields = RequestSceneFields(**vla_data.get("request_scene_fields", {}))
     vla = VLASettings(
         **{
             key: value
             for key, value in vla_data.items()
-            if key not in {"http", "vertex", "fixture"}
+            if key not in {"http", "vertex", "fixture", "request_scene_fields"}
         },
         http=http,
         vertex=vertex,
         fixture=fixture,
+        request_scene_fields=request_scene_fields,
     )
     observation_data = dict(data.get("observation", {}))
     scene_fields = SceneFieldSettings(**observation_data.pop("scene_fields", {}))

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "vertex-gemini-3.5-flash-lite-20260824-stopped-vehicle",
+  "source": "sanitized_capture",
+  "prompt_contract_version": "drivebench-vla-assessment-v1",
+  "request_match": {
+    "prompt_sha256": "024c8eac47bfadca33c76bcb223e0b3c63ff7415257e46308fabdbf52f588971",
+    "rgb_sha256": "3218b20a55cdecec3ac1277878aebdd946f02bb5eff8fc2777929cc5cba9be3c"
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\n  \"scene_summary\": \"A red vehicle is traveling ahead in the same lane on a multi-lane highway under a partly cloudy sky.\",\n  \"relevant_hazards\": [\n    {\n      \"type\": \"vehicle\",\n      \"relative_location\": \"front\",\n      \"risk\": \"medium\"\n    }\n  ],\n  \"meta_action\": \"FOLLOW\",\n  \"target_speed_mps\": 9.72,\n  \"confidence\": 0.95,\n  \"brief_justification\": \"Maintain safe following distance behind the lead vehicle on a clear road at cruise speed.\"\n}",
+    "model_id": "gemini-3.5-flash-lite",
+    "latency_s": 1.6134076250018552,
+    "metadata": {
+      "provider": "vertex",
+      "response_id": null,
+      "model_version": "gemini-3.5-flash-lite",
+      "input_tokens": 1967,
+      "output_tokens": 138,
+      "total_tokens": 2105
+    }
+  },
+  "artifact_sha256": "750962788a818ad8ab957c70628bc35df31eadd903ce9eab2d47f24afbdaa3f4"
+}

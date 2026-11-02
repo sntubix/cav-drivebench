@@ -31,6 +31,7 @@ from metadrive_starter.provider_fixture_capture import (
     convert_probe_capture_to_provider_fixtures,
 )
 from metadrive_starter.race import load_race_plan, run_race
+from metadrive_starter.recorded_probes import load_recorded_probes, recorded_capture
 from metadrive_starter.replay import replay_event_log
 from metadrive_starter.simulation import RunSummary, run_simulation
 from metadrive_starter.submission import (
@@ -110,7 +111,10 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument(
         "--replay-from",
         type=Path,
-        help="reuse exact saved prompt and PNG artifacts instead of launching MetaDrive",
+        help=(
+            "reuse exact saved prompt and PNG artifacts instead of launching MetaDrive; "
+            "with --submission, build from a recorded catalog's frames and scenes"
+        ),
     )
     probe_parser.add_argument(
         "--submission",
@@ -495,11 +499,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "probe":
         observation_builder: ObservationBuilder | None = None
         if args.submission is not None:
-            if args.replay_from is not None:
-                parser.error(
-                    "probe --replay-from sends the saved observations again; "
-                    "--submission applies only when capturing"
-                )
             try:
                 config = apply_submission_overlay(config, args.submission)
                 observation_builder = build_observation_builder(
@@ -515,13 +514,29 @@ def main(argv: list[str] | None = None) -> int:
         if args.replay_from is not None:
             if provider is None:
                 parser.error("probe --replay-from requires --infer")
-            summary = replay_vla_probe_artifacts(
-                config,
-                args.replay_from,
-                args.output_dir,
-                scenario_ids=args.scenario_ids,
-                provider=provider,
-            )
+            if observation_builder is not None:
+                # A recorded scene, asked about through the team's own observation.
+                try:
+                    probes = load_recorded_probes(args.replay_from, scenario_ids=args.scenario_ids)
+                except (FileNotFoundError, ValueError) as exc:
+                    parser.error(f"probe --replay-from with --submission: {exc}")
+                summary = run_vla_probe_catalog(
+                    config,
+                    [probe.scenario for probe in probes],
+                    args.output_dir,
+                    infer=True,
+                    provider=provider,
+                    capture=recorded_capture(probes),
+                    observation_builder=observation_builder,
+                )
+            else:
+                summary = replay_vla_probe_artifacts(
+                    config,
+                    args.replay_from,
+                    args.output_dir,
+                    scenario_ids=args.scenario_ids,
+                    provider=provider,
+                )
         else:
             scenarios = load_probe_scenarios(args.manifest)
             summary = run_vla_probe_catalog(

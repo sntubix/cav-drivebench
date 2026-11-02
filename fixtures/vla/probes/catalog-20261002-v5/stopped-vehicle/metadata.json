@@ -1,0 +1,62 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "3e46daede5db6fc0018c19324911eb40f6d7dcc5fdacdf0fca532e6abfdc9548",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "856d6b06dceb040d0d5c9014da38a01b019ad029cd6ec56913eddbea9503fb37",
+    "rgb_sha256": "563b24d7c0cabfb173bdbeee52b9b4fa5409c4e8a96a06df4bee6dea34f63dc4",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "1fe778f36bf7c42a0fb4c677d6e3cb0a3714c1df038c06c96b1a842c9b0e10df",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-stopped-vehicle-seed-0"
+  },
+  "scenario": {
+    "description": "A stationary lead vehicle directly on the ego route, with the adjacent right lane clear.",
+    "evaluation": {
+      "acceptable_actions": [
+        "CHANGE_LANE_RIGHT"
+      ],
+      "maximum_target_speed_mps": 5.555555555555555,
+      "minimum_target_speed_mps": 2.7777777777777777,
+      "raw_speed_required": false,
+      "required_hazards": [
+        {
+          "relative_location": "front",
+          "type": "vehicle"
+        }
+      ]
+    },
+    "expected_visual": "One stopped car clearly visible in the ego lane at decision distance, and an empty lane to its right.",
+    "id": "stopped-vehicle",
+    "map": "S",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": [
+      {
+        "distance_m": 22.0,
+        "id": "lead-car",
+        "kind": "car",
+        "lane_offset": 0,
+        "lateral_m": 0.0
+      }
+    ]
+  },
+  "schema_version": 4
+}

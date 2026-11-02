@@ -176,18 +176,9 @@ class VLAInferenceScheduler:
         now_value = float(now_s)
 
         with self._lock:
-            if self._closed:
-                return InferenceSubmitDisposition.CLOSED
-            if self._future is not None:
-                return InferenceSubmitDisposition.BUSY
-            if self.request_cap_exhausted:
-                return InferenceSubmitDisposition.REQUEST_CAP_EXHAUSTED
-            if (
-                self._last_started_at_s is not None
-                and now_value >= self._last_started_at_s
-                and now_value - self._last_started_at_s < self.minimum_interval_s
-            ):
-                return InferenceSubmitDisposition.RATE_LIMITED
+            rejection = self._rejection(now_value)
+            if rejection is not None:
+                return rejection
 
             self._future = self._executor.submit(
                 self.pipeline.infer,
@@ -208,6 +199,34 @@ class VLAInferenceScheduler:
             self._latest_generation_id = self._next_generation_id
             self._next_generation_id += 1
             return InferenceSubmitDisposition.STARTED
+
+    def would_reject(self, *, now_s: float) -> InferenceSubmitDisposition | None:
+        """Why a frame submitted now would be rejected, or None when it would start.
+
+        The answer holds until the caller submits, since only the control thread
+        submits and a completion frees the slot only when it is polled. It lets a
+        caller skip capturing a frame the scheduler could not take.
+        """
+        if not _non_negative_finite(now_s):
+            raise ValueError("now_s must be finite and non-negative")
+        with self._lock:
+            return self._rejection(float(now_s))
+
+    def _rejection(self, now_s: float) -> InferenceSubmitDisposition | None:
+        # Caller holds the lock.
+        if self._closed:
+            return InferenceSubmitDisposition.CLOSED
+        if self._future is not None:
+            return InferenceSubmitDisposition.BUSY
+        if self.request_cap_exhausted:
+            return InferenceSubmitDisposition.REQUEST_CAP_EXHAUSTED
+        if (
+            self._last_started_at_s is not None
+            and now_s >= self._last_started_at_s
+            and now_s - self._last_started_at_s < self.minimum_interval_s
+        ):
+            return InferenceSubmitDisposition.RATE_LIMITED
+        return None
 
     def poll(self) -> InferenceCompletion | None:
         """Collect the current completion once, without raising inference errors."""

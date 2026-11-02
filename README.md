@@ -9,10 +9,11 @@ boundaries around it.
 ## Start here
 
 1. [Get the code and install it](docs/getting-started.md).
-2. Read the brief of the current assignment:
-   [Assignment 1: PID control](course/assignment-1/README.md).
+2. Read the briefs, in order; each builds on the one before:
+   - [Assignment 1: PID control](course/assignment-1/README.md)
+   - [Assignment 2: Observation and arbitration](course/assignment-2/README.md)
 3. Write your work in `submission/`, [check it](docs/getting-started.md#check-your-work)
-   with `uv run metadrive-starter gates`, and
+   with the `gates` command the brief gives, and
    [hand it in](docs/getting-started.md#hand-in) on Moodle.
 
 ## How the project works
@@ -22,12 +23,16 @@ tree. Each assignment adds one piece of the decision system around the model,
 and every file ships as a working stub, so the whole pipeline drives from the
 first day:
 
-| Assignment | You write | It decides |
-| --- | --- | --- |
-| 1. PID control | `controller.py` | steering, throttle, and brake from tracking errors |
-| 2. Observation and arbitration | `observation.py`, `arbitration.py` | what the model sees, and how far to trust its assessment |
-| 3. Request cadence and cloud | `request_policy.py` | when to ask the model, within a request budget |
-| 4. Race | no new code | tuning only |
+| Assignment | You write | It decides | Weight |
+| --- | --- | --- | --- |
+| 1. PID control | `controller.py` | steering, throttle, and brake from tracking errors | 15% |
+| 2. Observation and arbitration | `observation.py`, `arbitration.py` | what the model sees, and how far to trust its assessment | 30% |
+| 3. Request cadence and cloud | `request_policy.py` | when to ask the model, within a request budget | 30% |
+| 4. Race | no new code | tuning only | 25% |
+
+The four assignments make up 60% of the project grade, in the weights above,
+and the oral defence at the end of the project makes up the other 40%. Each
+brief says how its assignment is marked.
 
 `submission/agent.yaml` holds the tuning values your assignment permits.
 Everything else, including the simulator, route tracking, the safety floor,
@@ -36,8 +41,8 @@ calls but never edits. Run the public routes as often as you like; graded
 numbers come only from hidden routes that the instructors run.
 
 All assignments in the published course sequence are required. Instructors
-provide the cloud accounts used by the course, and the supplied profiles enforce
-request caps. Students do not provision cloud projects or administer billing.
+provide the cloud accounts used by the course, and the supplied cloud profiles
+enforce request caps. Students do not provision cloud projects or administer billing.
 
 ## Reference
 
@@ -64,6 +69,8 @@ scripts/native-platform-check.sh native Ubuntu VLM validation and evidence captu
 tests/                           unit, integration, and simulator checks
 submission/                      team-owned code, starting from working stubs
 course/assignment-1/             Assignment 1 brief and PID lab notebook
+course/assignment-2/             Assignment 2 brief and its two notebooks
+fixtures/                        recorded probe scenes, and model answers the gates and demos replay
 ```
 
 </details>

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "vertex-gemini-3.5-flash-lite-20260824-clear-straight",
+  "source": "sanitized_capture",
+  "prompt_contract_version": "drivebench-vla-assessment-v1",
+  "request_match": {
+    "prompt_sha256": "024c8eac47bfadca33c76bcb223e0b3c63ff7415257e46308fabdbf52f588971",
+    "rgb_sha256": "1138fd5307411bbd374f3e952899fcb492ce8f56fa3c839b17b3a75f666e6c9f"
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\n  \"scene_summary\": \"The ego vehicle is stopped or moving extremely slowly on a multi-lane highway under clear sky conditions, with no immediate obstacles or vehicles visible ahead.\",\n  \"relevant_hazards\": [],\n  \"meta_action\": \"KEEP_LANE\",\n  \"target_speed_mps\": 9.72,\n  \"confidence\": 0.95,\n  \"brief_justification\": \"The road ahead is completely clear of traffic and obstacles. As the vehicle is currently nearly stationary, the target speed is set to the cruise speed to resume normal driving within the current lane.\"\n}",
+    "model_id": "gemini-3.5-flash-lite",
+    "latency_s": 2.4555953749804758,
+    "metadata": {
+      "provider": "vertex",
+      "response_id": null,
+      "model_version": "gemini-3.5-flash-lite",
+      "input_tokens": 1967,
+      "output_tokens": 134,
+      "total_tokens": 2101
+    }
+  },
+  "artifact_sha256": "add9c66021c95cc5bcfc8e6f9d1e438e154bbcdfea75005d5f3ae5bf6d8fc4eb"
+}

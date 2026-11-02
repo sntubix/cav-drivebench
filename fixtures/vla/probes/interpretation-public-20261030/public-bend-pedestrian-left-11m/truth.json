@@ -1,0 +1,51 @@
+{
+  "id": "public-bend-pedestrian-left-11m",
+  "group": "geometry",
+  "map": "CS",
+  "seed": 3,
+  "spawn_longitude_m": 30.0,
+  "tags": {
+    "geometry": "bend"
+  },
+  "timestamp_s": 0.1,
+  "ego_speed_mps": 0.026031019166116675,
+  "ego_lane": 1,
+  "lane_count": 3,
+  "left_lane_available": true,
+  "right_lane_available": true,
+  "lens_fov_deg": [
+    60.0,
+    35.9833984375
+  ],
+  "width": 512,
+  "height": 288,
+  "png_sha256": "fcbf0bd17e697afba0cdac89286ce79dcc8abd00d1cdb843245f7b5ef4e83261",
+  "objects": [
+    {
+      "id": "a",
+      "spec": {
+        "id": "a",
+        "kind": "pedestrian",
+        "distance_m": 11.0,
+        "lane_offset": -1
+      },
+      "measured": true,
+      "object_id": "study-public-bend-pedestrian-left-11m-a",
+      "kind": "pedestrian",
+      "hazard_type": "pedestrian",
+      "relative_location": "front_left",
+      "distance_m": 11.0,
+      "forward_m": 11.0,
+      "left_m": 3.5,
+      "in_path": false,
+      "lane_relation": "unknown",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        103.6,
+        200.1
+      ]
+    }
+  ],
+  "unexpected_objects": []
+}

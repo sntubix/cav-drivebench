@@ -1,0 +1,43 @@
+{
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "png_sha256": "bef5e62a0b387171fa01d6ae9c88c83469f5a4123dc5bb16abc1ed76feda4b24",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "024c8eac47bfadca33c76bcb223e0b3c63ff7415257e46308fabdbf52f588971",
+    "rgb_sha256": "1138fd5307411bbd374f3e952899fcb492ce8f56fa3c839b17b3a75f666e6c9f",
+    "scene_context_included": false,
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v1",
+    "request_id": "probe-clear-straight-seed-0"
+  },
+  "scenario": {
+    "description": "Unobstructed straight-road baseline with no generated traffic.",
+    "evaluation": {
+      "acceptable_actions": [
+        "KEEP_LANE"
+      ],
+      "maximum_target_speed_mps": 9.722222222222221,
+      "minimum_target_speed_mps": 6.944444444444445
+    },
+    "expected_visual": "Clear lane markings and an unobstructed road extending to the horizon.",
+    "id": "clear-straight",
+    "map": "S",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": []
+  },
+  "schema_version": 2
+}

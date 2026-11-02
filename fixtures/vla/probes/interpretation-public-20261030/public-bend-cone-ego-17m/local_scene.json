@@ -1,0 +1,36 @@
+{
+  "distance_to_left_boundary_m": 5.25,
+  "distance_to_right_boundary_m": 5.25,
+  "ego_length_m": 4.515,
+  "ego_speed_mps": 0.026031019166116675,
+  "ego_width_m": 1.852,
+  "heading_error_rad": 0.0,
+  "lane_offset_m": 0.0,
+  "left_lane_available": true,
+  "objects": [
+    {
+      "confidence": 1.0,
+      "in_path": true,
+      "kind": "traffic_cone",
+      "lane_relation": "same",
+      "length_m": 0.2,
+      "object_id": "study-public-bend-cone-ego-17m-a",
+      "path_cross_track_m": 0.0,
+      "path_distance_m": 16.999210357666016,
+      "path_relative_velocity_mps": -0.005872670561075211,
+      "relative_position_m": [
+        16.999210357666016,
+        0.0
+      ],
+      "relative_velocity_mps": [
+        -0.005872670561075211,
+        -1.5690590160488682e-08
+      ],
+      "width_m": 0.2
+    }
+  ],
+  "right_lane_available": true,
+  "timestamp_s": 0.1,
+  "traffic_lights": [],
+  "valid": true
+}

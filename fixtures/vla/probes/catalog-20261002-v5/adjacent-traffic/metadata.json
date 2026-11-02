@@ -1,0 +1,63 @@
+{
+  "benchmark_version": 2,
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "observation_builder": "metadrive_starter.vla.prompting.DefaultObservationBuilder",
+    "png_sha256": "0924d178893d7bdbdbb3955763b8f206239988edd1817f8965697fe599f2f6f5",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "51ab94d2d5f3ad04231fc15f7da0cb4ec0508f30cc26aed8d29d8a9cd3515669",
+    "rgb_sha256": "23fdf18dba385dea55fee1112b37742ef54ebb33bd890517df5548b0c057ed28",
+    "scene_context_included": true,
+    "scene_file": "scene.json",
+    "scene_sha256": "9a86789e95d5015867bc77e254de909860304d343633f74ff8f45560a9325f6d",
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v5",
+    "request_id": "probe-adjacent-traffic-seed-0"
+  },
+  "scenario": {
+    "description": "A stationary vehicle in the lane adjacent to the ego route.",
+    "evaluation": {
+      "acceptable_actions": [
+        "KEEP_LANE",
+        "SLOW_DOWN"
+      ],
+      "maximum_target_speed_mps": 9.722222222222221,
+      "minimum_target_speed_mps": 5.555555555555555,
+      "raw_speed_required": false,
+      "required_hazards": [
+        {
+          "relative_location": "front_right",
+          "type": "vehicle"
+        }
+      ]
+    },
+    "expected_visual": "One car is clearly visible ahead in a neighbouring lane while the ego lane stays clear.",
+    "id": "adjacent-traffic",
+    "map": "S",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.0,
+    "traffic_light": null,
+    "vehicles": [
+      {
+        "distance_m": 18.0,
+        "id": "adjacent-car",
+        "kind": "car",
+        "lane_offset": 1,
+        "lateral_m": 0.0
+      }
+    ]
+  },
+  "schema_version": 4
+}

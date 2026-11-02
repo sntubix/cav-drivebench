@@ -25,7 +25,8 @@ class ActionSpeedDecision:
 
 @dataclass(frozen=True)
 class ActionSpeedPolicy:
-    """Map semantic actions to local speed objectives without model actuator authority."""
+    """Cap a high-level action's target speed at the course's own speed for that
+    action, without model actuator authority."""
 
     mode: str
     cruise_speed_mps: float
@@ -66,7 +67,10 @@ class ActionSpeedPolicy:
             )
 
         mapped = self._mapped_speed(action)
-        would_intervene = not math.isclose(
+        # The mapped speed is a ceiling: the policy may lower what the arbiter
+        # and the safety floor let through, never raise it (the monotone
+        # restriction holds for the course's own policies as for a team's).
+        would_intervene = mapped < requested and not math.isclose(
             requested,
             mapped,
             rel_tol=0.0,
@@ -78,15 +82,15 @@ class ActionSpeedPolicy:
             action=action,
             requested_target_speed_mps=requested,
             mapped_target_speed_mps=mapped,
-            effective_target_speed_mps=mapped if self.mode == "enforce" else requested,
+            effective_target_speed_mps=mapped if applied else requested,
             would_intervene=would_intervene,
             applied=applied,
             reason=(
                 "locally mapped action speed applied"
                 if applied
-                else "locally mapped action speed differs; shadow only"
+                else "locally mapped action speed is lower; shadow only"
                 if would_intervene
-                else "model target matches locally mapped action speed"
+                else "model target is within the locally mapped action speed"
             ),
         )
 

@@ -1,0 +1,53 @@
+{
+  "id": "public-single-barrier-ego-24m",
+  "group": "single",
+  "map": "SS",
+  "seed": 3,
+  "spawn_longitude_m": null,
+  "tags": {
+    "kind": "barrier",
+    "lane": "ego",
+    "distance_m": 24
+  },
+  "timestamp_s": 0.1,
+  "ego_speed_mps": 0.02603090554482922,
+  "ego_lane": 1,
+  "lane_count": 3,
+  "left_lane_available": true,
+  "right_lane_available": true,
+  "lens_fov_deg": [
+    60.0,
+    35.9833984375
+  ],
+  "width": 512,
+  "height": 288,
+  "png_sha256": "ae325b53a9da91cec8c6bdf9d035b39ecf1aa918e04aae873c7df92dfe441071",
+  "objects": [
+    {
+      "id": "a",
+      "spec": {
+        "id": "a",
+        "kind": "barrier",
+        "distance_m": 24.0,
+        "lane_offset": 0
+      },
+      "measured": true,
+      "object_id": "study-public-single-barrier-ego-24m-a",
+      "kind": "traffic_barrier",
+      "hazard_type": "obstacle",
+      "relative_location": "front",
+      "distance_m": 24.0,
+      "forward_m": 24.0,
+      "left_m": -0.0,
+      "in_path": true,
+      "lane_relation": "crossing",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        256.0,
+        168.7
+      ]
+    }
+  ],
+  "unexpected_objects": []
+}

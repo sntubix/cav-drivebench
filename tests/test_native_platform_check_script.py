@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import tarfile
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 NATIVE_CHECK = PROJECT_ROOT / "scripts" / "native-platform-check.sh"
@@ -15,6 +17,12 @@ MODEL_NAME = "Qwen3VL-2B-Instruct-Q4_K_M.gguf"
 MMPROJ_NAME = "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf"
 LLAMA_ARCHIVE_NAME = "llama-b10771-bin-ubuntu-x64.tar.gz"
 LLAMA_ARCHIVE_SHA256 = "42bb60d6027c99ec05ff1a5ae441e45345a3fcccaf86ca655b4dc51b5519c814"
+VULKAN_ARCHIVE_NAME = "llama-b10771-bin-ubuntu-vulkan-x64.tar.gz"
+VULKAN_ARCHIVE_SHA256 = "35d98f9c60dcd6c1af2267990b33fcd981a011f8b902dcbb0d5f280bf807bd53"
+VULKAN_DEVICES = (
+    "Available devices:\n"
+    "  Vulkan0: NVIDIA RTX PRO 6000 Blackwell (97887 MiB, 96000 MiB free)"
+)
 MODEL_SHA256 = "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae"
 MMPROJ_SHA256 = "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82"
 SMOLVLM_MODEL_NAME = "SmolVLM-256M-Instruct-Q8_0.gguf"
@@ -107,6 +115,7 @@ exit 0
 path=${{!#}}
 case "${{path}}" in
   *{LLAMA_ARCHIVE_NAME}) digest={LLAMA_ARCHIVE_SHA256} ;;
+  *{VULKAN_ARCHIVE_NAME}) digest={VULKAN_ARCHIVE_SHA256} ;;
   *{MODEL_NAME}) digest={MODEL_SHA256} ;;
   *{SMOLVLM_MMPROJ_NAME}) digest=${{FAKE_SMOLVLM_MMPROJ_SHA256:-{SMOLVLM_MMPROJ_SHA256}}} ;;
   *{SMOLVLM_MODEL_NAME}) digest={SMOLVLM_MODEL_SHA256} ;;
@@ -139,6 +148,15 @@ while true; do sleep 1; done
 """,
     )
     _write_executable(
+        fake_bin / "nvidia-smi",
+        """#!/usr/bin/env bash
+case "$*" in
+  *driver_version*) printf '580.178.04\\n' ;;
+  *) printf 'NVIDIA RTX PRO 6000 Blackwell, 97887 MiB\\n' ;;
+esac
+""",
+    )
+    _write_executable(
         fake_bin / "curl",
         """#!/usr/bin/env bash
 if [[ -f "${FAKE_SERVER_MARKER}" ]]; then
@@ -157,13 +175,18 @@ if [[ "${1-}" == "--version" ]]; then
   printf 'built with GNU 11.4.0 for Linux x86_64\\n'
   exit 0
 fi
+if [[ "${1-}" == "--list-devices" ]]; then
+  printf '%b\\n' "${FAKE_LLAMA_DEVICES:-Available devices:}"
+  exit 0
+fi
 touch "${FAKE_SERVER_MARKER}"
 trap 'rm -f "${FAKE_SERVER_MARKER}"; exit 0' TERM INT EXIT
 while true; do sleep 1; done
 """,
     )
-    with tarfile.open(model_dir / LLAMA_ARCHIVE_NAME, "w:gz") as archive:
-        archive.add(llama_server, arcname="build/bin/llama-server")
+    for archive_name in (LLAMA_ARCHIVE_NAME, VULKAN_ARCHIVE_NAME):
+        with tarfile.open(model_dir / archive_name, "w:gz") as archive:
+            archive.add(llama_server, arcname="build/bin/llama-server")
     _write_executable(
         fake_bin / "time",
         """#!/usr/bin/env bash
@@ -191,6 +214,26 @@ fi
 if [[ "$*" == *"scripts/native_vlm_summary.py"* ]]; then
   shift 3
   exec python3 "$@"
+fi
+if [[ "$*" == *"scripts/native_render_check.py"* ]]; then
+  mode=""
+  output=""
+  previous=""
+  for item in "$@"; do
+    if [[ "${previous}" == "--render-path" ]]; then mode=${item}; fi
+    if [[ "${previous}" == "--output" ]]; then output=${item}; fi
+    previous=${item}
+  done
+  valid=true
+  if [[ " ${FAKE_RENDER_FAILS-} " == *" ${mode} "* ]]; then valid=false; fi
+  mkdir -p -- "$(dirname -- "${output}")"
+  printf '{"render_path":"%s","display":"%s","pipe":"fake-%s-pipe","valid":%s}\\n' \
+    "${mode}" "${DISPLAY-}" "${mode}" "${valid}" > "${output}"
+  [[ "${valid}" == true ]]
+  exit
+fi
+if [[ "$*" == *"python -m pytest"* ]]; then
+  printf 'DISPLAY=%s\\n' "${DISPLAY-}"
 fi
 if [[ -n "${FAKE_QWEN_STRUCTURED_FAILS-}" && "$*" == *"vla-probe-qwen3-vl-2b-llama-structured.yaml"* ]]; then
   exit 1
@@ -294,7 +337,10 @@ def test_native_platform_check_records_two_successful_fake_vlm_rounds(
     report, statuses = _statuses(project)
     assert report["successful"] is True
     assert report["candidate"]["llama_release"] == "b10771"
+    assert report["candidate"]["llama_variant"] == "cpu"
+    assert report["render_path"] == "xvfb"
     assert statuses["n0-platform"] == "passed"
+    assert statuses["n2-render"] == "passed"
     assert statuses["n2-tests"] == "passed"
     assert statuses["n2-gates"] == "passed"
     assert statuses["n4-gates"] == "passed"
@@ -323,7 +369,13 @@ def test_native_platform_check_records_two_successful_fake_vlm_rounds(
     assert host["llama_archive_sha256"] == LLAMA_ARCHIVE_SHA256
     assert host["model_sha256"] == MODEL_SHA256
     assert host["mmproj_sha256"] == MMPROJ_SHA256
+    assert host["llama_variant"] == "cpu"
+    assert host["gpu_driver"] == "580.178.04"
     for round_number in (1, 2):
+        server = (
+            project / RUN_DIR / "model" / f"round-{round_number}" / "server-command.txt"
+        ).read_text()
+        assert "--n-gpu-layers 0 --no-mmproj-offload" in server
         acceptance = json.loads(
             (
                 project
@@ -515,3 +567,132 @@ def test_native_platform_check_needs_both_smolvlm_files(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "--smolvlm-mmproj must be a non-empty path" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("xvfb", "render_fails", "render_path", "tests_display"),
+    [
+        ("Xvfb", "", "xvfb", ":197"),
+        # The grading server: no Xvfb, and MetaDrive renders through EGL.
+        ("drivebench-no-xvfb", "", "headless", ""),
+        ("Xvfb", "xvfb", "headless", ""),
+    ],
+)
+def test_native_platform_check_renders_on_xvfb_when_it_draws_and_headless_otherwise(
+    tmp_path: Path,
+    xvfb: str,
+    render_fails: str,
+    render_path: str,
+    tests_display: str,
+) -> None:
+    project, command, environment, _ = _fake_native_project(tmp_path)
+    environment["NATIVE_PLATFORM_XVFB"] = xvfb
+    environment["FAKE_RENDER_FAILS"] = render_fails
+    # A desktop session's display is never the one the evidence renders on.
+    environment["DISPLAY"] = ":0"
+
+    result = _run(command, project, environment)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report, statuses = _statuses(project)
+    assert report["successful"] is True
+    assert report["render_path"] == render_path
+    assert statuses["n2-render"] == "passed"
+    assert statuses["n5-round-2"] == "passed"
+    record = json.loads((project / RUN_DIR / "render" / f"{render_path}.json").read_text())
+    assert record["valid"] is True
+    assert record["display"] == tests_display
+    assert f"DISPLAY={tests_display}\n" in (project / RUN_DIR / "logs" / "n2-tests.log").read_text()
+
+
+def test_native_platform_check_refuses_when_neither_render_path_draws_a_frame(
+    tmp_path: Path,
+) -> None:
+    project, command, environment, _ = _fake_native_project(tmp_path)
+    environment["FAKE_RENDER_FAILS"] = "xvfb headless"
+
+    result = _run(command, project, environment)
+
+    assert result.returncode == 1
+    report, statuses = _statuses(project)
+    assert report["successful"] is False
+    assert report["render_path"] == "none"
+    assert statuses["n2-render"] == "failed"
+    assert statuses["n2-tests"] == "not_run"
+    assert "neither a private Xvfb display nor headless rendering" in (
+        project / RUN_DIR / "logs" / "n2-render.log"
+    ).read_text()
+    for render_path in ("xvfb", "headless"):
+        record = json.loads((project / RUN_DIR / "render" / f"{render_path}.json").read_text())
+        assert record["valid"] is False
+
+
+def _vulkan_command(command: list[str]) -> list[str]:
+    archive = command.index("--llama-archive") + 1
+    return [
+        *command[:archive],
+        f"tmp/native-vlm/{VULKAN_ARCHIVE_NAME}",
+        *command[archive + 1 : -2],
+        "--vulkan",
+        *command[-2:],
+    ]
+
+
+def test_native_platform_check_validates_the_vulkan_build_on_the_gpu(
+    tmp_path: Path,
+) -> None:
+    project, command, environment, _ = _fake_native_project(tmp_path)
+    environment["FAKE_LLAMA_DEVICES"] = VULKAN_DEVICES
+    command = _vulkan_command(command)
+    command[-2:-2] = [
+        "--smolvlm-model",
+        f"tmp/native-vlm/{SMOLVLM_MODEL_NAME}",
+        "--smolvlm-mmproj",
+        f"tmp/native-vlm/{SMOLVLM_MMPROJ_NAME}",
+    ]
+
+    result = _run(command, project, environment)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report, statuses = _statuses(project)
+    assert report["successful"] is True
+    assert report["candidate"]["llama_variant"] == "vulkan"
+    assert statuses["n7-smolvlm"] == "passed"
+    for round_name in ("round-1", "round-2", "smolvlm"):
+        server = (project / RUN_DIR / "model" / round_name / "server-command.txt").read_text()
+        assert "--n-gpu-layers 99" in server, round_name
+        assert "--no-mmproj-offload" not in server, round_name
+    host = json.loads((project / RUN_DIR / "host.json").read_text())
+    assert host["llama_variant"] == "vulkan"
+    assert host["llama_archive_path"] == f"tmp/native-vlm/{VULKAN_ARCHIVE_NAME}"
+    assert host["llama_archive_sha256"] == VULKAN_ARCHIVE_SHA256
+    assert host["gpu"] == "NVIDIA RTX PRO 6000 Blackwell, 97887 MiB"
+    assert host["gpu_driver"] == "580.178.04"
+    assert "Vulkan0: NVIDIA RTX PRO 6000 Blackwell" in host["llama_devices"]
+
+
+@pytest.mark.parametrize(
+    ("archive", "devices", "refusal"),
+    [
+        (LLAMA_ARCHIVE_NAME, VULKAN_DEVICES, f"must be the accepted file: {VULKAN_ARCHIVE_NAME}"),
+        (VULKAN_ARCHIVE_NAME, "Available devices:", "the Vulkan build lists no Vulkan device"),
+    ],
+)
+def test_vulkan_validation_refuses_another_archive_or_a_build_without_a_gpu(
+    tmp_path: Path,
+    archive: str,
+    devices: str,
+    refusal: str,
+) -> None:
+    project, command, environment, _ = _fake_native_project(tmp_path)
+    environment["FAKE_LLAMA_DEVICES"] = devices
+    command = _vulkan_command(command)
+    command[command.index("--llama-archive") + 1] = f"tmp/native-vlm/{archive}"
+
+    result = _run(command, project, environment)
+
+    assert result.returncode == 1
+    _, statuses = _statuses(project)
+    assert statuses["n0-platform"] == "failed"
+    assert statuses["n1-sync"] == "not_run"
+    assert refusal in (project / RUN_DIR / "logs" / "n0-platform.log").read_text()

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import fields
+from typing import Iterable
 
 from metadrive_starter.perception.scene import LaneRelation, LocalScene, TrackedObject
 from metadrive_starter.prompt_policy import normalize_prompt_policy
@@ -11,6 +13,8 @@ from metadrive_starter.vla.contracts import (
 )
 from metadrive_starter.vla.observation import (
     OUTPUT_CONTRACT,
+    SCENE_FIELDS,
+    ModelScene,
     Observation,
     ObservationRequest,
 )
@@ -176,14 +180,16 @@ def build_vla_scene_context(
     if scene is None:
         return None
 
-    objects = sorted(scene.objects, key=_object_sort_key)[:max_scene_objects]
-    return {
-        "valid": scene.valid,
-        "lanes": {
+    # A withheld field is left out, never written as measured empty.
+    withheld = _withheld(scene)
+    context: dict[str, object] = {"valid": scene.valid}
+    if "lanes" not in withheld:
+        context["lanes"] = {
             "left": _lane_context(scene, side=LaneRelation.LEFT),
             "right": _lane_context(scene, side=LaneRelation.RIGHT),
-        },
-        "traffic_controls": [
+        }
+    if "traffic_controls" not in withheld:
+        context["traffic_controls"] = [
             {
                 "id": light.light_id,
                 "state": light.state.value,
@@ -193,9 +199,56 @@ def build_vla_scene_context(
                 "confidence": light.confidence,
             }
             for light in sorted(scene.traffic_lights, key=lambda light: light.light_id)
-        ],
-        "objects": [_compact_object(tracked, scene.ego_speed_mps) for tracked in objects],
+        ]
+    if "objects" not in withheld:
+        objects = sorted(scene.objects, key=_object_sort_key)[:max_scene_objects]
+        context["objects"] = [
+            _compact_object(tracked, scene.ego_speed_mps) for tracked in objects
+        ]
+    return context
+
+
+def withhold_scene(scene: LocalScene | None, withheld: Iterable[str]) -> LocalScene | None:
+    """``scene`` as an observation request carries it, without the fields ``withheld``
+    names (ADR-0008). With nothing withheld, ``scene`` itself.
+
+    Lane clearance is judged here, on the whole scene, so that a request may keep it
+    while withholding the objects it is judged from.
+    """
+    withheld = frozenset(withheld)
+    unknown = withheld - set(SCENE_FIELDS)
+    if unknown:
+        raise ValueError(f"cannot withhold unknown scene fields: {', '.join(sorted(unknown))}")
+    if scene is None or not withheld:
+        return scene
+    if not isinstance(scene, LocalScene):
+        raise PromptBuildError("scene must be a LocalScene or None")
+    withheld |= _withheld(scene)
+    if "lanes" in withheld:
+        withheld |= {"lane_clearance"}
+    values = {item.name: getattr(scene, item.name) for item in fields(LocalScene)}
+    clear = {
+        f"{side.value}_lane_clear": _lane_context(scene, side=side).get("observed_clear")
+        for side in (LaneRelation.LEFT, LaneRelation.RIGHT)
     }
+    if "lane_clearance" in withheld:
+        clear = {name: None for name in clear}
+    if "objects" in withheld:
+        values["objects"] = ()
+    if "traffic_controls" in withheld:
+        values["traffic_lights"] = ()
+    if "lanes" in withheld:
+        values.update(
+            left_lane_available=None,
+            right_lane_available=None,
+            distance_to_left_boundary_m=None,
+            distance_to_right_boundary_m=None,
+        )
+    return ModelScene(**values, **clear, withheld=withheld)
+
+
+def _withheld(scene: LocalScene) -> frozenset[str]:
+    return scene.withheld if isinstance(scene, ModelScene) else frozenset()
 
 
 def _non_negative_finite(value: object) -> bool:
@@ -245,8 +298,16 @@ def _lane_context(scene: LocalScene, *, side: LaneRelation) -> dict[str, object]
         if side is LaneRelation.LEFT
         else scene.right_lane_available
     )
-    if not scene.valid or available is None:
-        observed_clear: bool | None = None
+    observed_clear: bool | None
+    if isinstance(scene, ModelScene):
+        # Judged on the whole scene when it was withheld from.
+        if "lane_clearance" in scene.withheld:
+            return {"available": available}
+        observed_clear = (
+            scene.left_lane_clear if side is LaneRelation.LEFT else scene.right_lane_clear
+        )
+    elif not scene.valid or available is None:
+        observed_clear = None
     elif not available:
         observed_clear = False
     else:

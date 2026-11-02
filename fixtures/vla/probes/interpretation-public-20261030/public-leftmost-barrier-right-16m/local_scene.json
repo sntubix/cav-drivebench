@@ -1,0 +1,36 @@
+{
+  "distance_to_left_boundary_m": 1.75,
+  "distance_to_right_boundary_m": 8.75,
+  "ego_length_m": 4.515,
+  "ego_speed_mps": 0.026030905544757843,
+  "ego_width_m": 1.852,
+  "heading_error_rad": 0.0,
+  "lane_offset_m": 0.0,
+  "left_lane_available": false,
+  "objects": [
+    {
+      "confidence": 1.0,
+      "in_path": false,
+      "kind": "traffic_barrier",
+      "lane_relation": "unknown",
+      "length_m": 2.0,
+      "object_id": "study-public-leftmost-barrier-right-16m-a",
+      "path_cross_track_m": -3.500096321105957,
+      "path_distance_m": 15.999502182006836,
+      "path_relative_velocity_mps": -0.02441690140403807,
+      "relative_position_m": [
+        15.999502182006836,
+        -3.500096321105957
+      ],
+      "relative_velocity_mps": [
+        -0.02441690140403807,
+        0.008997872471809387
+      ],
+      "width_m": 0.3
+    }
+  ],
+  "right_lane_available": true,
+  "timestamp_s": 0.1,
+  "traffic_lights": [],
+  "valid": true
+}

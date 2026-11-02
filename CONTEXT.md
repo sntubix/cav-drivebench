@@ -40,8 +40,14 @@ _Avoid_: control, ownership
 **Observation**:
 Everything the model receives for one request: the rendered image together with the
 textual context and prompt that accompany it. One artifact, assembled by student code
-from values declared in configuration.
+from values declared in configuration, and never from a withheld scene field.
 _Avoid_: input, prompt, frame
+
+**Withheld scene field**:
+A part of the measured scene that the instructor's configuration keeps out of the
+observation request, so the model must find it in the image: for Assignment 2, the
+tracked objects and the traffic lights. Arbitration still sees it.
+_Avoid_: hidden field, masked scene, redacted context
 
 **Output contract**:
 The prompt lines that ask for exactly what the decoder accepts: the contract version, the

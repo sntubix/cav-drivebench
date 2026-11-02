@@ -288,6 +288,7 @@ class OpenAICompatibleHTTPProvider:
             raise ModelProviderError(
                 message,
                 category=_http_failure_category(response.status_code),
+                status_code=response.status_code,
             )
 
         text, metadata = _decode_response_content(response.body)

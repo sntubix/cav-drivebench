@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from metadrive_starter.implementation_checks import (
@@ -185,3 +187,28 @@ def test_a_controller_that_raises_fails_every_check_with_its_error() -> None:
     assert {(result.passed, result.detail) for result in results} == {
         (False, "the controller raised RuntimeError: boom")
     }
+
+
+class Exiting(Raising):
+    def update(self, tick):
+        sys.exit(3)
+
+
+def test_a_controller_that_exits_fails_every_check_with_its_exit() -> None:
+    results = run_implementation_checks(Exiting)
+
+    assert len(results) == 6
+    assert {(result.passed, result.detail) for result in results} == {
+        (False, "the controller raised SystemExit: 3")
+    }
+
+
+class Interrupted(Raising):
+    def update(self, tick):
+        raise KeyboardInterrupt
+
+
+def test_an_interrupt_while_checking_stops_the_checks() -> None:
+    # Only an operator's interrupt is let through; every other way out fails a check.
+    with pytest.raises(KeyboardInterrupt):
+        run_implementation_checks(Interrupted)

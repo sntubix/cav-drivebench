@@ -1,0 +1,48 @@
+{
+  "capture": {
+    "cruise_speed_mps": 9.722222222222221,
+    "ego_speed_mps": 0.026030905544757843,
+    "height": 288,
+    "image_file": "frame.png",
+    "png_sha256": "35f98ce2561199cc7c2a4cb0b45e5cb036581fa83de6ca16db90d509bc8ffe09",
+    "prompt_file": "prompt.txt",
+    "prompt_sha256": "024c8eac47bfadca33c76bcb223e0b3c63ff7415257e46308fabdbf52f588971",
+    "rgb_sha256": "a84ba424996fcf4250d731e9b73feaada15ad61edea32da96c6c99ecbb9ae18f",
+    "scene_context_included": false,
+    "timestamp_s": 0.1,
+    "width": 512
+  },
+  "mode": "capture_only",
+  "outcome": {
+    "status": "captured"
+  },
+  "request": {
+    "created_at_s": 0.1,
+    "prompt_contract_version": "drivebench-vla-assessment-v1",
+    "request_id": "probe-red-light-with-traffic-seed-0"
+  },
+  "scenario": {
+    "description": "A red traffic light controls the ego approach while seeded traffic occupies the intersection.",
+    "evaluation": {
+      "acceptable_actions": [
+        "SLOW_DOWN",
+        "STOP"
+      ],
+      "maximum_target_speed_mps": 2.7777777777777777,
+      "minimum_target_speed_mps": 0.0
+    },
+    "expected_visual": "A red signal is visible ahead at a four-way intersection with surrounding traffic present.",
+    "id": "red-light-with-traffic",
+    "map": "X",
+    "seed": 0,
+    "settle_steps": 1,
+    "traffic_density": 0.15,
+    "traffic_light": {
+      "distance_m": 38.0,
+      "state": "red",
+      "visual_scale": 1.75
+    },
+    "vehicles": []
+  },
+  "schema_version": 2
+}

@@ -1,5 +1,6 @@
 import json
 import math
+import sys
 import textwrap
 import time
 from dataclasses import replace
@@ -273,9 +274,11 @@ def test_only_action_speed_and_confidence_of_an_answer_reach_the_floor() -> None
             "confidence raised from 0.9 to 1",
         ),
         (lambda request: 1 / 0, "arbitrate(request) raised ZeroDivisionError: division by zero"),
+        # sys.exit() is a bad answer like any other: declined, never the end of the run.
+        (lambda request: sys.exit(3), "arbitrate(request) raised SystemExit: 3"),
         (lambda request: {"meta_action": "STOP"}, "must return a VLAAssessment; got a dict"),
     ],
-    ids=["more-authority", "raises", "not-an-assessment"],
+    ids=["more-authority", "raises", "exits", "not-an-assessment"],
 )
 def test_an_answer_that_cannot_stand_is_declined_for_the_arbiter(answer, problem: str) -> None:
     decision = arbitrate_assessment(_Answers(answer), _request())
@@ -345,8 +348,9 @@ def test_a_review_keeps_or_ends_the_model_command(
         (lambda request: None, "review(request) must return True or False; got None"),
         (lambda request: 1, "review(request) must return True or False; got 1"),
         (lambda request: 1 / 0, "review(request) raised ZeroDivisionError: division by zero"),
+        (lambda request: sys.exit(3), "review(request) raised SystemExit: 3"),
     ],
-    ids=["nothing", "truthy", "raises"],
+    ids=["nothing", "truthy", "raises", "exits"],
 )
 def test_a_review_that_cannot_stand_ends_the_model_command(keep, problem: str) -> None:
     decision = review_command(_Answers(None, keep), _review())
@@ -355,6 +359,17 @@ def test_a_review_that_cannot_stand_ends_the_model_command(keep, problem: str) -
     assert (decision.revoked, decision.problem) == (True, problem)
     # Reported even when no command holds authority, so the gate still sees it.
     assert (idle.revoked, idle.problem) == (False, problem)
+
+
+def test_an_interrupt_in_the_arbiter_stops_the_run() -> None:
+    # Only an operator's interrupt is let through; every other way out is acted on.
+    def interrupt(request: object) -> bool:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        arbitrate_assessment(_Answers(interrupt), _request())
+    with pytest.raises(KeyboardInterrupt):
+        review_command(_Answers(None, interrupt), _review())
 
 
 # The runtime: arbitration on the control loop, upstream of command derivation.

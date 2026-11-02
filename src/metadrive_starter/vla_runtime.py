@@ -215,6 +215,8 @@ def _build_scheduler(
         maximum_clock_skew_s=settings.maximum_clock_skew_s,
         prompt_policy=settings.prompt_policy,
         observation_builder=observation_builder,
+        model_id=settings.requested_model_id,
+        withheld_scene_fields=settings.request_scene_fields.withheld,
     )
     return VLAInferenceScheduler(
         pipeline,

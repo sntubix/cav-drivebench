@@ -1,0 +1,53 @@
+{
+  "id": "public-single-pedestrian-ego-13m",
+  "group": "single",
+  "map": "SS",
+  "seed": 3,
+  "spawn_longitude_m": null,
+  "tags": {
+    "kind": "pedestrian",
+    "lane": "ego",
+    "distance_m": 13
+  },
+  "timestamp_s": 0.1,
+  "ego_speed_mps": 0.02603090554482922,
+  "ego_lane": 1,
+  "lane_count": 3,
+  "left_lane_available": true,
+  "right_lane_available": true,
+  "lens_fov_deg": [
+    60.0,
+    35.9833984375
+  ],
+  "width": 512,
+  "height": 288,
+  "png_sha256": "37f8b2fff864ef758596f51daf7c4e74a18800a69a98d89cc4f8f1ea6b3baafc",
+  "objects": [
+    {
+      "id": "a",
+      "spec": {
+        "id": "a",
+        "kind": "pedestrian",
+        "distance_m": 13.0,
+        "lane_offset": 0
+      },
+      "measured": true,
+      "object_id": "study-public-single-pedestrian-ego-13m-a",
+      "kind": "pedestrian",
+      "hazard_type": "pedestrian",
+      "relative_location": "front",
+      "distance_m": 13.0,
+      "forward_m": 13.0,
+      "left_m": 0.0,
+      "in_path": true,
+      "lane_relation": "crossing",
+      "within_detection_radius": true,
+      "in_view": true,
+      "pixel": [
+        256.0,
+        191.6
+      ]
+    }
+  ],
+  "unexpected_objects": []
+}

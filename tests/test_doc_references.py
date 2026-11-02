@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SKIPPED = {".git", ".claude", ".venv", "tmp", "artifacts", "test_artifacts", "node_modules"}
+SKIPPED = {".git", ".claude", ".venv", ".pytest_cache", "tmp", "artifacts", "test_artifacts", "node_modules"}
 # A repository path written as code: the first part is a top-level directory.
 REPOSITORY_DIRECTORIES = {"configs", "course", "docs", "fixtures", "scripts", "src", "submission", "tests"}
 LINK = re.compile(r"\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")

@@ -34,6 +34,14 @@ vla:
   request_timeout_s: 1.0
   minimum_interval_s: 0.5
   action_horizon_s: 2.0
+  # Assignment 2's observation gets no measured objects or traffic lights, so the
+  # model must find them in the image; arbitration still sees the whole measured
+  # scene (ADR-0008). Instructor-owned: agent.yaml cannot change it.
+  request_scene_fields:
+    lanes: true
+    lane_clearance: true
+    traffic_controls: false
+    objects: false
   fixture:
     path: fixtures/vla/providers/semantic-failures/stopped-vehicle-keep-lane.json
     repeat_last: true

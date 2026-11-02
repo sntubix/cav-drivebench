@@ -190,3 +190,36 @@ def test_stopped_vehicles_are_placed_along_the_route(tmp_path: Path) -> None:
         ("truck", 20.0, "truck"),
         ("car", 30.0, "car"),
     ]
+
+
+def test_the_stopped_vehicle_ahead_is_logged_like_the_others(tmp_path: Path) -> None:
+    config = config_from_dict(
+        {
+            "simulator": {"map": "S", "horizon": 2, "headless": True},
+            "scenario": {
+                "stopped_vehicle_ahead_m": 25.0,
+                "stopped_vehicles": [
+                    {"vehicle_id": "truck", "distance_m": 40.0, "kind": "truck"},
+                ],
+            },
+        }
+    )
+    config.event_log = EventLogSettings(
+        enabled=True,
+        path=str(tmp_path / "events.jsonl"),
+        scenario_id="stopped-vehicle-ahead",
+    )
+
+    run_simulation(config, controller_factory=lambda settings: _Coasting())
+
+    spawned = [
+        record.payload
+        for record in read_event_log(config.event_log.path)
+        if record.event_type == "scenario_vehicle_spawned"
+    ]
+    assert [(item["vehicle_id"], item["distance_m"], item["kind"]) for item in spawned] == [
+        ("stopped-vehicle", 25.0, "car"),
+        ("truck", 40.0, "truck"),
+    ]
+    assert spawned[0].keys() == spawned[1].keys()
+    assert spawned[0]["object_id"] != spawned[1]["object_id"]

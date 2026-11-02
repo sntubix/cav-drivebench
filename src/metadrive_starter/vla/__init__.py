@@ -55,6 +55,8 @@ from metadrive_starter.vla.http_provider import (
 )
 from metadrive_starter.vla.observation import (
     OUTPUT_CONTRACT,
+    SCENE_FIELDS,
+    ModelScene,
     Observation,
     ObservationBuilder,
     ObservationBuilderFactory,
@@ -78,6 +80,7 @@ from metadrive_starter.vla.prompting import (
     PromptBuildError,
     build_vla_prompt,
     build_vla_scene_context,
+    withhold_scene,
 )
 from metadrive_starter.vla.provider import (
     ModelFailureCategory,
@@ -140,6 +143,7 @@ __all__ = [
     "ModelRequest",
     "ModelResponse",
     "ModelResponseMetadata",
+    "ModelScene",
     "ModelTimeoutError",
     "OUTPUT_CONTRACT",
     "Observation",
@@ -166,6 +170,7 @@ __all__ = [
     "ReviewDecision",
     "ReviewRequest",
     "RiskLevel",
+    "SCENE_FIELDS",
     "ScriptedModelProvider",
     "VLAAssessment",
     "VLAAssessmentPayloadError",
@@ -188,6 +193,7 @@ __all__ = [
     "build_observation_builder",
     "build_vla_prompt",
     "build_vla_scene_context",
+    "withhold_scene",
     "checked_observation",
     "decode_vla_assessment",
     "declined",

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture_id": "synthetic-lane-change-right-fallback",
+  "source": "synthetic",
+  "prompt_contract_version": "drivebench-vla-assessment-v5",
+  "request_match": {
+    "prompt_sha256": null,
+    "rgb_sha256": null
+  },
+  "outcome": {
+    "type": "response",
+    "text": "{\"scene_summary\":\"The requested right lane is unavailable.\",\"relevant_hazards\":[],\"meta_action\":\"KEEP_LANE\",\"target_speed_mps\":4.0,\"confidence\":0.95,\"brief_justification\":\"Remain in the current lane after local rejection.\"}",
+    "model_id": "synthetic-lane-change-model",
+    "latency_s": 0.0,
+    "metadata": {
+      "provider": "synthetic_fixture",
+      "response_id": "synthetic-lane-change-right-2",
+      "model_version": "synthetic-v1",
+      "input_tokens": 128,
+      "output_tokens": 44,
+      "total_tokens": 172
+    }
+  },
+  "artifact_sha256": "9c232a9ae7b85250ca0b99159d480284e62a4cc818f83596fbbd34b385e520ff"
+}

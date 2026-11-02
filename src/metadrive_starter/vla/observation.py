@@ -69,6 +69,34 @@ OUTPUT_CONTRACT = OutputContract(
 )
 
 
+# The measured-scene fields an instructor may withhold from the model's
+# observation, as vla.request_scene_fields names them (ADR-0008).
+SCENE_FIELDS = ("lanes", "lane_clearance", "traffic_controls", "objects")
+
+
+@dataclass(frozen=True)
+class ModelScene(LocalScene):
+    """The measured scene as an observation request carries it (ADR-0008).
+
+    A ``LocalScene`` without the fields the instructor withholds: no objects when
+    ``objects`` is withheld, no traffic lights for ``traffic_controls``, and no
+    lane availability or road-edge distances for ``lanes``. ``withheld`` names
+    them, so a field withheld is never mistaken for one measured empty.
+    Arbitration never sees a ``ModelScene``: it judges against the whole scene.
+    """
+
+    withheld: frozenset[str] = frozenset()
+    # Whether each lane beside the ego lane is observed clear, judged on the whole
+    # measured scene; None when unknown or withheld.
+    left_lane_clear: bool | None = None
+    right_lane_clear: bool | None = None
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not isinstance(self.withheld, frozenset) or not self.withheld <= set(SCENE_FIELDS):
+            raise ValueError(f"withheld must be a frozenset of {', '.join(SCENE_FIELDS)}")
+
+
 @dataclass(frozen=True)
 class ObservationRequest:
     """Everything one observation may be assembled from.
@@ -82,7 +110,8 @@ class ObservationRequest:
     # How long the proposed manoeuvre will hold, in seconds.
     action_horizon_s: float
     contract: OutputContract = OUTPUT_CONTRACT
-    # The measured local scene; None when there is none.
+    # The measured local scene, without the fields in withheld; None when there
+    # is none.
     scene: LocalScene | None = None
     # Measured ego speed; None when unknown.
     ego_speed_mps: float | None = None
@@ -92,6 +121,14 @@ class ObservationRequest:
     max_scene_objects: int = 8
     # The configured policy text (vla.prompt_policy).
     prompt_policy: str = ""
+    # The model this request goes to, as its configuration names it
+    # (vla.http.model_id or vla.vertex.model_id); None when recorded answers
+    # stand in for a model.
+    model_id: str | None = None
+    # The measured-scene fields the instructor withholds from the model
+    # (vla.request_scene_fields), whether or not a scene was measured. The model
+    # must find them in the image.
+    withheld: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)

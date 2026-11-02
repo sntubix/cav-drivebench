@@ -14,7 +14,9 @@ Live-model evidence is never pooled with synthetic evidence. An assessment is li
 only when its run was configured for a model provider and its response carries no
 fixture identity. Everything else, a replayed capture of a real model included, is
 synthetic: it measures whoever authored or first recorded the answer, not a model
-call, and counting a replay again would inflate the live corpus.
+call, and counting a replay again would inflate the live corpus. Synthetic
+evidence is also kept apart by fixture: two fixtures that share a model id are
+two sources, and pooled they would manufacture a signal neither carries.
 """
 
 from __future__ import annotations
@@ -372,7 +374,10 @@ def calibrate(assessments: Sequence[ScoredAssessment]) -> Calibration:
 
 
 def summarize(scan: CorpusScan) -> AgreementReport:
-    """Summarize per evidence class and model profile, live profiles first."""
+    """Summarize per evidence class and model profile, live profiles first.
+
+    A synthetic profile names its fixture too, so each fixture is summarized alone.
+    """
     grouped: dict[tuple[EvidenceClass, str], list[ScoredAssessment]] = {}
     for assessment in scan.assessments:
         grouped.setdefault((assessment.evidence, assessment.profile), []).append(assessment)
@@ -401,7 +406,8 @@ def format_report(report: AgreementReport, *, disagreement_limit: int = 5) -> st
         (EvidenceClass.LIVE, "Live model evidence"),
         (
             EvidenceClass.SYNTHETIC,
-            "Synthetic evidence (fixtures and replays, never pooled with live)",
+            "Synthetic evidence (fixtures and replays, one profile per fixture, "
+            "never pooled with live)",
         ),
     ):
         profiles = [item for item in report.profiles if item.evidence is evidence]
@@ -432,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
             "Score the hazards in every logged assessment against the local scene "
             "it was validated in, and report precision, recall, and confidence "
             "calibration per model profile, keeping live-model evidence apart "
-            "from fixtures and replays."
+            "from fixtures and replays, and each fixture apart from the others."
         ),
     )
     parser.add_argument(
@@ -560,14 +566,17 @@ def _identify(
         metadata = {}
     model_id = response.get("model_id") or (run.model_id if run else None) or "unknown"
     provider = run.provider if run else "unknown"
+    fixture = metadata.get("fixture_id") or metadata.get("fixture_sha256")
     live = (
         provider in _MODEL_PROVIDERS
         and metadata.get("provider") in _LIVE_RESPONSE_PROVIDERS
-        and not metadata.get("fixture_id")
-        and not metadata.get("fixture_sha256")
+        and not fixture
     )
-    evidence = EvidenceClass.LIVE if live else EvidenceClass.SYNTHETIC
-    return evidence, f"{provider}:{model_id}"
+    if live:
+        return EvidenceClass.LIVE, f"{provider}:{model_id}"
+    # Fixtures may share a model id; each is its own source, never pooled with another.
+    profile = f"{provider}:{model_id}" + (f":{fixture}" if fixture else "")
+    return EvidenceClass.SYNTHETIC, profile
 
 
 def _hazard(value: object) -> VLAHazard:

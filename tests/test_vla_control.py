@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import time
 from collections import deque
+from threading import Event
 
-from metadrive_starter.faults import FaultSpec
+from metadrive_starter.faults import FaultInjectingModelProvider, FaultSpec
 from metadrive_starter.perception import LocalScene
 from metadrive_starter.planning.command_executor import (
     CommandExecutionSource,
@@ -13,6 +14,7 @@ from metadrive_starter.planning.command_executor import (
 from metadrive_starter.safety import VLACommandValidator
 from metadrive_starter.vla import (
     CameraCaptureError,
+    InferenceFailure,
     InferenceSubmitDisposition,
     ModelProviderError,
     ModelRequest,
@@ -39,6 +41,14 @@ class FakeCamera:
         return RGBFrame(timestamp_s, 1, 1, b"\x01\x02\x03")
 
 
+class StaleCamera:
+    """Hands over frames too old for the pipeline to send."""
+
+    def capture(self, env: object, *, timestamp_s: float) -> RGBFrame:
+        del env
+        return RGBFrame(timestamp_s - 10.0, 1, 1, b"\x01\x02\x03")
+
+
 class SequenceProvider:
     def __init__(self, actions: list[str | Exception]) -> None:
         self.actions = deque(actions)
@@ -63,6 +73,19 @@ class SequenceProvider:
             model_id="runtime-test",
             latency_s=0.0,
         )
+
+
+class HeldProvider(SequenceProvider):
+    """Answers only once released, so the scheduler's slot stays taken."""
+
+    def __init__(self, actions: list[str | Exception]) -> None:
+        super().__init__(actions)
+        self.release = Event()
+
+    def generate(self, request: ModelRequest, *, timeout_s: float) -> ModelResponse:
+        if not self.release.wait(timeout=1.0):
+            raise ModelProviderError("test provider was not released")
+        return super().generate(request, timeout_s=timeout_s)
 
 
 def _scene(timestamp_s: float) -> LocalScene:
@@ -127,6 +150,48 @@ def test_runtime_falls_back_while_inference_runs_then_applies_validated_result()
         assert completed.execution.target_speed_mps == 0.0
         assert completed.execution.command_id == "run-1-vla-1"
     finally:
+        scheduler.close()
+
+
+def test_runtime_captures_a_frame_only_when_the_scheduler_could_take_it() -> None:
+    camera = FakeCamera()
+    provider = HeldProvider(["STOP", "STOP"])
+    scheduler = VLAInferenceScheduler(
+        VLAInferencePipeline(provider),
+        minimum_interval_s=1.0,
+    )
+    runtime = VLACommandRuntime(
+        scheduler,
+        VLACommandValidator(),
+        VLACommandExecutor(35.0),
+        run_id="run-1",
+        camera=camera,  # type: ignore[arg-type]
+    )
+    try:
+        started = runtime.update(
+            object(), _scene(1.0), now_s=1.0, ego_speed_mps=18.0, cruise_speed_mps=35.0
+        )
+        busy = runtime.update(
+            object(), _scene(1.1), now_s=1.1, ego_speed_mps=18.0, cruise_speed_mps=35.0
+        )
+        assert started.submission_disposition is InferenceSubmitDisposition.STARTED
+        assert busy.submission_disposition is InferenceSubmitDisposition.BUSY
+        assert camera.captures == 1
+
+        provider.release.set()
+        completed = _update_until_completion(runtime, now_s=1.2)
+        assert completed.completion is not None
+        assert completed.submission_disposition is InferenceSubmitDisposition.RATE_LIMITED
+        assert camera.captures == 1
+
+        again = runtime.update(
+            object(), _scene(2.0), now_s=2.0, ego_speed_mps=18.0, cruise_speed_mps=35.0
+        )
+        assert again.submission_disposition is InferenceSubmitDisposition.STARTED
+        assert again.submitted_request_id == "run-1-vla-2"
+        assert camera.captures == 2
+    finally:
+        provider.release.set()
         scheduler.close()
 
 
@@ -298,5 +363,42 @@ def test_runtime_injects_scheduled_camera_dropout_before_capture() -> None:
         assert update.active_fault_ids == ("camera-loss-1",)
         assert update.submission_disposition is None
         assert update.execution.source is CommandExecutionSource.LOCAL_FALLBACK
+    finally:
+        scheduler.close()
+
+
+def test_runtime_drops_fault_registration_when_inference_fails_before_the_provider() -> None:
+    provider = FaultInjectingModelProvider(SequenceProvider([]))
+    scheduler = VLAInferenceScheduler(
+        VLAInferencePipeline(provider),
+        minimum_interval_s=0.0,
+    )
+    runtime = VLACommandRuntime(
+        scheduler,
+        VLACommandValidator(),
+        VLACommandExecutor(35.0),
+        run_id="run-1",
+        camera=StaleCamera(),  # type: ignore[arg-type]
+        fault_provider=provider,
+    )
+    fault = FaultSpec("provider-error-1", "provider_error", 0, 1)
+    try:
+        submitted = runtime.update(
+            object(),
+            _scene(20.0),
+            now_s=20.0,
+            ego_speed_mps=18.0,
+            cruise_speed_mps=35.0,
+            active_faults=(fault,),
+        )
+        completed = _update_until_completion(runtime, now_s=20.1)
+
+        assert submitted.submitted_request_id == "run-1-vla-1"
+        assert isinstance(completed.completion, InferenceFailure)
+        assert completed.completion.request_id == "run-1-vla-1"
+        assert "stale" in str(completed.completion.error)
+        # The stale frame never reached the provider, so nothing consumed the
+        # registration; the runtime dropped it when the failure was collected.
+        provider.register("run-1-vla-1", (fault,))
     finally:
         scheduler.close()

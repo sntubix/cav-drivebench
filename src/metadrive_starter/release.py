@@ -66,6 +66,11 @@ STUDENT_ROOT_DOCUMENTS = frozenset({"README.md", "CONTEXT.md"})
 # withheld material they are not secret, only not shipped yet.
 RELEASE_PLAN = PurePosixPath("course/instructor/release-plan.yaml")
 _DOCUMENT_SUFFIXES = frozenset({".md", ".pdf"})
+# What a recorded scene measured. A hidden scene's can repeat a public scene's
+# byte for byte, as every empty road's scene.json does, and the frames, prompts,
+# and truth beside it are what is withheld, so these two are no copy to refuse.
+_RECORDED_PROBES = PurePosixPath("course/instructor/probes")
+_RECORDED_SCENE_DESCRIPTORS = frozenset({"scene.json", "local_scene.json"})
 
 # Credentials resolve from the environment, so no shipped file ever holds one.
 _SECRETS = (
@@ -337,7 +342,8 @@ def _stage(
             assert source is not None
             data = source.read()
             if withhold(path):
-                withheld[_sha256(data)] = member.name
+                if not _recorded_scene_descriptor(path):
+                    withheld[_sha256(data)] = member.name
                 continue
             if hold(path):
                 continue
@@ -346,6 +352,10 @@ def _stage(
             target.write_bytes(data)
             target.chmod(0o755 if member.mode & 0o111 else 0o644)
     return withheld
+
+
+def _recorded_scene_descriptor(path: PurePosixPath) -> bool:
+    return path.name in _RECORDED_SCENE_DESCRIPTORS and _RECORDED_PROBES in path.parents
 
 
 def _withheld_leaks(student: Path, withheld: Mapping[str, str]) -> Iterator[str]:

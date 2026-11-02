@@ -1,0 +1,46 @@
+{
+  "lanes": {
+    "left": {
+      "available": true,
+      "observed_clear": false
+    },
+    "right": {
+      "available": true,
+      "observed_clear": false
+    }
+  },
+  "objects": [
+    {
+      "confidence": 1.0,
+      "distance_m": 11.999,
+      "estimated_speed_mps": 0.02,
+      "id": "study-public-multi-car-ego-28-pedestrian-right-14-cone-left-12-c",
+      "in_path": false,
+      "kind": "traffic_cone",
+      "relative_location": "front_left",
+      "relative_speed_mps": -0.006
+    },
+    {
+      "confidence": 1.0,
+      "distance_m": 14.0,
+      "estimated_speed_mps": 0.0,
+      "id": "study-public-multi-car-ego-28-pedestrian-right-14-cone-left-12-b",
+      "in_path": false,
+      "kind": "pedestrian",
+      "relative_location": "front_right",
+      "relative_speed_mps": -0.026
+    },
+    {
+      "confidence": 1.0,
+      "distance_m": 28.0,
+      "estimated_speed_mps": 0.003,
+      "id": "study-public-multi-car-ego-28-pedestrian-right-14-cone-left-12-a",
+      "in_path": true,
+      "kind": "vehicle",
+      "relative_location": "front",
+      "relative_speed_mps": -0.023
+    }
+  ],
+  "traffic_controls": [],
+  "valid": true
+}

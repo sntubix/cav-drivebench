@@ -174,7 +174,11 @@ def arbitrate_assessment(
         answer = arbiter.arbitrate(request)
     except ArbitrationError as exc:
         problem = str(exc)
-    except Exception as exc:
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        # sys.exit() is a bad answer like any other; only an operator's interrupt
+        # stops the run.
         problem = f"arbitrate(request) raised {type(exc).__name__}: {exc}"
     elapsed_s = time.perf_counter() - started_s
     if problem is None:
@@ -221,7 +225,9 @@ def review_command(arbiter: AssessmentArbiter, request: ReviewRequest) -> Review
         answer = arbiter.review(request)
     except ArbitrationError as exc:
         problem = str(exc)
-    except Exception as exc:
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
         problem = f"review(request) raised {type(exc).__name__}: {exc}"
     elapsed_s = time.perf_counter() - started_s
     if problem is None:
