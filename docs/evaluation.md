@@ -84,6 +84,34 @@ uv run metadrive-starter probe \
 
 The probe scores the model's assessment, never your arbiter's answer.
 
+### Probe scores and Assignment 2's marks
+
+`summary.json` scores each layer in `scores`, as scenes passed out of scenes
+scored. Each is close to one of [Assignment 2's marks](../course/assignment-2/README.md#the-mark), not the
+same:
+
+| Layer | Passes when | Close to |
+| --- | --- | --- |
+| a scene's `status` | `success` when the answer decoded; `failure`, with a decoder error in `metadata.json`, when it did not, and also when no answer came back: a timeout or transport error, which marking does not count, or a request the server refused, which it counts as an answer that does not decode | [syntax](../course/assignment-2/README.md#syntax-10-points) |
+| `perception` | the answer reports every hazard the scene requires | the recall in [scene interpretation](../course/assignment-2/README.md#scene-interpretation-15-points) |
+| `tactical_action` | the proposed action is one the scene accepts | [tactical decision](../course/assignment-2/README.md#tactical-decision-30-points) |
+| `raw_speed` | the proposed speed is in the scene's range; diagnostic, since the runtime maps each action to its own speed | [tactical decision](../course/assignment-2/README.md#tactical-decision-30-points) |
+
+Scene interpretation is marked per hazard, on scenes of its own.
+`scores.perception` passes a scene whose answer reports every hazard it
+requires, which is close to recall, but it never checks for invented hazards,
+which cost precision, and it requires road features, which marking never
+counts. [`probe-analysis.ipynb`](../course/assignment-2/probe-analysis.ipynb) lists each hazard an
+answer invents as "not in the scene", and pools a run's answers into recall,
+precision, and F1 as marking does. The tactical-decision mark also needs the
+speed to fit the scene, before and after your arbiter, which the probe never
+runs.
+
+The probe's traffic lights are enlarged to 1.75 times their size, so that their
+state is legible at 512x288, and a traffic-light result on the probe does not
+generalise to real signals. Assignment 2 marks no traffic light: no hidden
+scene holds one, so the public red-light scene is for practice only.
+
 ### Exact-input replay
 
 Replay a saved catalog against another provider without rerendering MetaDrive:
@@ -189,6 +217,26 @@ Grading uses other timings, maps, and combinations of the same kinds. The run
 reports no score, because Assignment 2 is marked from the open-loop probe on
 hidden scenes, as its brief says. The manifest's `no_score` text says so in the
 report.
+
+### What an arbiter sees under each fault
+
+The public gate run schedules one scenario of each of the six kinds; grading
+uses other timings, maps, and combinations, two at once. An Assignment 2
+arbiter has only to survive them, and this is what each hands it:
+
+| Fault | What `arbitrate` sees |
+| --- | --- |
+| `camera_dropout` | no new request, so no assessment; the command that holds authority grows old |
+| `lidar_dropout` | with LiDAR as the safety source, a scene with `valid` false and no objects |
+| `provider_timeout` | no assessment |
+| `provider_error` | no assessment |
+| `provider_latency` | an answer that arrives late; `now_s` minus `issued_at_s` is its age |
+| `malformed_output` | no assessment |
+
+The three provider failures reach only `review`, as `request.failure`, which
+Assignment 2 leaves returning True, so each leaves the last command your
+arbiter let through to drive until its action horizon ends. Retrying belongs
+to Assignment 3.
 
 ### Deterministic lane-change acceptance
 
@@ -298,6 +346,23 @@ are reported apart from live model calls, never pooled with them, and each
 fixture apart from every other, even when two share a model id. It reads logs
 only, and runs neither the simulator nor a model.
 
+### The two recorded failures
+
+[`configs/demo-vla-semantic-stopped-vehicle.yaml`](../configs/demo-vla-semantic-stopped-vehicle.yaml) and
+[`configs/demo-vla-semantic-partial-occlusion.yaml`](../configs/demo-vla-semantic-partial-occlusion.yaml) replay the two
+recorded wrong answers of
+[the Assignment 2 brief](../course/assignment-2/README.md#two-failures-in-opposite-directions). With the
+shipped arbiter, the model's command holds authority on 199 of 200 steps in
+both, and only the safety floor stops the car, 3.0 m short
+(`minimum_safety_gap_m`). Declining hands the same approach to the local
+fallback, which the floor stops 3.0 m short too.
+
+Hazard agreement also gives each log's confidence AUROC, the chance that an
+agreeing assessment is more confident than a disagreeing one, where 0.5 is
+chance: n/a in each, since each log repeats one answer. Pooled, the two would
+give 1.00 only because their answers differ in confidence as well as in
+agreement, so never pool runs from different sources.
+
 <details>
 <summary>Visual evidence checklist</summary>
 
@@ -313,6 +378,39 @@ compliance remains measurable, then run the structured configuration as a
 separate comparison.
 
 </details>
+
+## Measuring Assignment 2 work
+
+[The Assignment 2 brief](../course/assignment-2/README.md#measuring-and-citing) asks you to name, for every
+figure, the field it was read from and the command that wrote it. The probe's
+`metadata.json` and `run`'s JSON summary give every figure at full precision;
+`gates` gives none to cite. A live model can answer differently every time, so
+keep every output directory you cite; figures from the recorded answers and
+scenes reproduce exactly.
+
+| Tool | Covers | Does not cover |
+| --- | --- | --- |
+| [`observation-inspector.ipynb`](../course/assignment-2/observation-inspector.ipynb) | what your `observation.py` sends on the eight probe scenes and the eight recorded scenes with pedestrians and obstacles; what your file and each `agent.yaml` value change from DriveBench's original; what lower resolutions keep of the smallest things the probe checks | any model's answer |
+| `probe --submission ... --infer` | one answer per scene from one model, scored per layer | your arbiter; a closed loop |
+| [`probe-analysis.ipynb`](../course/assignment-2/probe-analysis.ipynb) | probe output by criterion, hazard agreement against the measured scene, recall, precision, and F1, SmolVLM's accepted answers, your arbiter on each answer, reruns, event logs; with no runs of your own, the two recorded failures on every scene | anything you did not give it |
+| `run ... --event-log` | a closed loop: the summary's `vla_metrics`, and one event per decision and control tick | scores against a scene's expected answer |
+| `python -m metadrive_starter.hazard_agreement` | the hazards and confidence of every assessment in event logs | probe output |
+| `gates`, Assignment 2's manifest | the structural floor, with a recorded answer | model quality, and your Assignment 2 marks |
+
+The notebooks are never submitted or graded, so save them as you like.
+
+Measure each attempt in a copy of your submission, never by editing and
+reverting `submission/` itself:
+
+```bash
+mkdir -p tmp && cp -R submission tmp/attempt-1
+uv run metadrive-starter probe --config configs/vla-probe-smolvlm-llama.yaml --submission tmp/attempt-1 --infer --seed 1 --output-dir tmp/probe-attempt-1-01
+```
+
+Edit `tmp/attempt-1/` between the two commands. `probe`, `run`, `gates`, and
+`config` all take `--submission` with any directory, and the probe saves the
+exact prompt each attempt sent. Record the attempt's complete `agent.yaml`, or
+its exact code change, beside the command, so that anyone can rebuild it.
 
 ## Where to go next
 

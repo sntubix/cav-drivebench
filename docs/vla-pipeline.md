@@ -260,8 +260,9 @@ Qwen3-VL-2B can on a CPU, under the model demos' 3 s horizon
 | 1.0 | 4.0 s | refuses every answer as stale | none |
 
 Were an answer to take a second instead, the same drive would hold continuous
-authority at full speed. Your own latency decides: the Assignment 2 brief's
-"Choosing a realtime factor" turns the measurement into a recipe. Pacing never changes simulation timestamps, command
+authority at full speed. Your own latency decides:
+[Choosing a realtime factor](running-and-configuring.md#choosing-a-realtime-factor)
+turns the measurement into a recipe. Pacing never changes simulation timestamps, command
 age, action horizon, PID time step, or fault timing: `simulator.realtime` and
 `realtime_factor` change only how old each answer is when it arrives.
 

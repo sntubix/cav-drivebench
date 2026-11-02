@@ -211,6 +211,21 @@ For Qwen, pass `tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf` and
 `--alias drivebench-qwen3-vl-2b-q4-k-m` and `--image-min-tokens 1024`. Each
 Assignment 2 configuration names the alias it expects.
 
+Serve with `--no-cache-prompt`, as grading does, when a run must repeat
+exactly. On Linux with a GPU, serve
+[the Vulkan build](#gpu-the-vulkan-build-of-the-same-pin), which grading uses,
+far faster than the CPU. On Apple silicon, do all marked work on
+[the macOS arm64 build](#apple-silicon-the-macos-arm64-build-of-the-same-pin),
+on Metal: [MLX](#apple-silicon-local-server-mlx-vlm) serves other checkpoints,
+whose figures do not predict the marks.
+
+SmolVLM runs on any laptop. Qwen3-VL-2B is about ten times slower per answer
+and, without a discrete GPU, can near the 60 s request timeout, so run it on
+your team's strongest laptop, together, in planned sessions: the server stays
+on that machine's loopback. Qwen's server needs about 4 GiB of memory and
+SmolVLM's under 1 GiB, beside about 5 GiB for the simulator, whose camera
+render slows every closed-loop run.
+
 ### GPU: the Vulkan build of the same pin
 
 `b10771` has no Linux CUDA build. Its Vulkan build runs the same pinned model
@@ -283,7 +298,8 @@ are, so `--seed n` works as on Linux: with `--no-cache-prompt` the same request
 and seed get the same answer. A prompt counts as many tokens as on the grading
 server, and the measures point the way they do there, though the answers
 themselves differ, as they differ between machines. Measure your own latency, as
-the brief's "Choosing a realtime factor" says.
+[Choosing a realtime factor](running-and-configuring.md#choosing-a-realtime-factor)
+says.
 
 ## Apple Silicon local server: MLX-VLM
 

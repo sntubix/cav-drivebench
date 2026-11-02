@@ -164,6 +164,17 @@ The values your team is graded on do not go in a profile: they belong in
 [`submission/agent.yaml`](../submission/agent.yaml) (see [Your submission](getting-started.md#your-submission)), which
 applies on top of whichever profile you run.
 
+A key that `agent.yaml` may only raise or only lower counts from the profile a
+run passes with `--config`. The closed-loop model demos set
+`controller.target_speed_mps` and `command_validation.maximum_target_speed_mps`
+to 5.56 m/s, where the other profiles set 9.72 and 13.9, so a higher value is
+rejected only in the demos. `config` with the same `--config` prints what a run
+will use:
+
+```bash
+uv run metadrive-starter config --config configs/vla-probe-smolvlm-llama.yaml --submission submission
+```
+
 All runtime/domain speeds use m/s: configuration, ego state, local scene, VLA
 command, validation, planning, PID, probe metadata, event logs, and summaries.
 Non-display `*_kmh` fields are rejected. Rendered display defaults to m/s; use
@@ -233,7 +244,43 @@ Runs are unpaced by default, which is useful for local simulation and tests.
 `--realtime` prevents one simulation second from passing faster than one wall-clock
 second. `--realtime-factor 0.5` advances at half real time, giving a slower model
 two wall-clock seconds per simulation second. `--unpaced` overrides a paced YAML
-profile.
+profile. The run asks the model as often as it answers, one request at a time,
+the next sent on the tick the last answer arrives: nothing samples on a timer,
+and under a local server nothing caps how many requests a run makes.
+
+### Choosing a realtime factor
+
+While a request is out, simulated time keeps passing at the rate
+`--realtime-factor` on `run` sets: at 0.25, four wall-clock seconds pass per
+simulated second. Every threshold is in simulated time, so the factor changes
+none of them, only how old each answer is when it arrives: a 6 s answer is 6 s
+old at 1.0 and 1.5 s old at 0.25. The safety floor refuses an answer that
+arrives older than `command_validation.maximum_command_age_s`, 2 s by default.
+One it accepts holds authority until its action horizon, counted from its
+frame: `vla.action_horizon_s`, 2 s by default and 3 s in the model demos.
+Requests go out one at a time, so the next answer lands as long after this one
+as this one took. For the model to hold authority without gaps, each answer
+must arrive within half the horizon:
+
+1. **Measure the latency**: `outcome.latency_s` in each probe scene's
+   `metadata.json`, or `vla_metrics.latency_p95_s` in a run's summary. Take the
+   slow end.
+2. **Divide half the horizon by it**, up to 1.0. With the default 2 s horizon,
+   4 s gives 0.25 and 10 s gives 0.1; under the model demos' 3 s horizon, 6 s
+   gives their 0.25.
+3. **Check that your machine kept up**: one that cannot runs slower than asked.
+   In a run's `--event-log`, the simulated seconds between the first and last
+   `control_applied` event, over the wall-clock seconds between their
+   `wall_time_utc`, is the factor achieved; an `inference_completed` event's
+   `sim_time_s`, minus the `submitted_at_s` in its payload, is the age its
+   answer arrived at.
+
+Report the factor, and the achieved one if lower, with every closed-loop
+figure: a slow factor makes a slow model look fast, and interpreting that is
+part of the analysis. Grading never slows time: it ages each answer by its
+token counts, as the Assignment 2 brief states. A closed-loop run gives your arbiter each answer as
+late as your model took.
+`--unpaced` runs as fast as the machine allows, and the probe is never paced.
 
 ## Files you generate
 
