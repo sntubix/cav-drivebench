@@ -119,12 +119,6 @@ The automated command deliberately records visual review, GUI/input, live local
 VLM, and live cloud VLM as separate gates. A successful exit means the automated
 Docker slice passed; it is not evidence that every optional runtime was exercised.
 
-For the native Ubuntu plus local-model gate, use the immutable downloads and
-single command in the
-[Linux llama.cpp acceptance recipe](model-providers.md#linux-local-server-acceptance-llamacpp).
-That validator includes the native simulator baseline and requires two clean
-model-server rounds with actual VLM authority and exact replay.
-
 <details>
 <summary>Rendered Docker execution</summary>
 

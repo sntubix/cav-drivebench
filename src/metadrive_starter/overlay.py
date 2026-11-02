@@ -18,7 +18,7 @@ from typing import Any, Iterable, Iterator, Mapping
 from metadrive_starter.config import AppConfig
 
 # Endpoint and model pins, and the measured-scene fields the model's observation
-# may draw on (ADR-0008): the instructor sets these at grading time, so no
+# may draw on: the instructor sets these at grading time, so no
 # allowlist may ever permit them.
 INSTRUCTOR_OWNED = (
     "vla.http",
@@ -98,7 +98,7 @@ ASSIGNMENT_1 = Allowlist(
 
 # Assignment 2 adds what the model sees, the configured prompt text and the
 # observation's channels, and the safety floor's command thresholds, which only
-# tighten: the monotone restriction (ADR-0001) applies to values as to code.
+# tighten: the monotone restriction applies to values as to code.
 # None of them reaches a run without the VLA subsystem, so Assignment 1 runs
 # stay as they were.
 ASSIGNMENT_2 = Allowlist(

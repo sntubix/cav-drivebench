@@ -70,13 +70,13 @@ OUTPUT_CONTRACT = OutputContract(
 
 
 # The measured-scene fields an instructor may withhold from the model's
-# observation, as vla.request_scene_fields names them (ADR-0008).
+# observation, as vla.request_scene_fields names them.
 SCENE_FIELDS = ("lanes", "lane_clearance", "traffic_controls", "objects")
 
 
 @dataclass(frozen=True)
 class ModelScene(LocalScene):
-    """The measured scene as an observation request carries it (ADR-0008).
+    """The measured scene as an observation request carries it.
 
     A ``LocalScene`` without the fields the instructor withholds: no objects when
     ``objects`` is withheld, no traffic lights for ``traffic_controls``, and no

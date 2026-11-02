@@ -30,7 +30,7 @@ vla:
   action_horizon_s: 2.0
   # Assignment 2's observation gets no measured objects or traffic lights, so the
   # model must find them in the image; arbitration still sees the whole measured
-  # scene (ADR-0008). Instructor-owned: agent.yaml cannot change it.
+  # scene. Instructor-owned: agent.yaml cannot change it.
   request_scene_fields:
     lanes: true
     lane_clearance: true

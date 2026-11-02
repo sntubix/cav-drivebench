@@ -12,21 +12,16 @@ All providers feed the same assessment decoder, command derivation, validation,
 scheduler, and controller. The provider changes where inference occurs, not the
 vehicle-authority boundary.
 
-Only officially recommended engines are eligible for course support. Exact
-runtime/model profiles become supported after they pass their platform
-acceptance sequence:
-
-| Platform | Official path | Current status |
+| Platform | Path | Use |
 | --- | --- | --- |
-| Any | checked fixtures | supported deterministic development path |
-| Apple Silicon | `llama.cpp`/`llama-server` on Metal | the pinned path for Assignment 2's marked work |
-| Apple Silicon | MLX-VLM | supported local VLM server, for demos and plumbing checks |
-| Linux | `llama.cpp`/`llama-server` | supported engine; pinned native candidate and acceptance validator available |
-| Course cloud | Vertex | supported instructor-funded coursework path |
+| Any | checked fixtures | deterministic development, and the gates |
+| Linux | `llama.cpp`'s `llama-server`, the pinned build | Assignment 2's marked work; grading runs its Vulkan build |
+| Apple Silicon | the same pinned `llama-server`, on Metal | Assignment 2's marked work |
+| Apple Silicon | MLX-VLM | demos and plumbing checks only |
+| Course cloud | Vertex | instructor-funded coursework path |
 
-Other OpenAI-compatible servers may work, but support begins only after an exact,
-pinned runtime/model combination passes the probe, closed-loop, replay, and
-resource acceptance sequence.
+Other OpenAI-compatible servers may work with the HTTP provider, but the course
+supports only these.
 
 ## Offline fixture provider
 
@@ -126,27 +121,63 @@ under `vla.http`, so `agent.yaml` cannot set them.
 
 </details>
 
-## Linux local-server acceptance: llama.cpp
+## The pinned `llama-server` and model files
 
-The official Linux engine is `llama.cpp`'s OpenAI-compatible multimodal
-`llama-server`. The native CPU candidate is deliberately immutable:
+Assignment 2's marked work, and its grading, run `llama.cpp`'s OpenAI-compatible
+multimodal `llama-server` at one pinned build, `b10771`, serving pinned model
+files. Check every file by SHA-256 before use: on Linux with `sha256sum --check`,
+as below, and on macOS with `shasum -a 256 -c`, which takes the same input.
 
-- llama.cpp `b10771`, official Ubuntu x64 archive SHA-256
-  `42bb60d6027c99ec05ff1a5ae441e45345a3fcccaf86ca655b4dc51b5519c814`;
-- Qwen model revision `d38d39f5972e27cd58023f9b1e9f994b0c85ca47`;
-- `Qwen3VL-2B-Instruct-Q4_K_M.gguf`, SHA-256
-  `089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae`;
-- `mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf`, SHA-256
+- llama.cpp `b10771`, Ubuntu x64 archive `llama-b10771-bin-ubuntu-x64.tar.gz`,
+  SHA-256 `42bb60d6027c99ec05ff1a5ae441e45345a3fcccaf86ca655b4dc51b5519c814`,
+  from the
+  [llama.cpp build attestation](https://github.com/ggml-org/llama.cpp/attestations/44860492);
+  the Vulkan and macOS arm64 archives of the same build are listed below.
+- Qwen3-VL-2B-Instruct, from the immutable
+  [Qwen GGUF revision](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/tree/d38d39f5972e27cd58023f9b1e9f994b0c85ca47)
+  `d38d39f5972e27cd58023f9b1e9f994b0c85ca47`: `Qwen3VL-2B-Instruct-Q4_K_M.gguf`,
+  SHA-256 `089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae`, and
+  `mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf`, SHA-256
   `f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82`.
+- SmolVLM-256M-Instruct, from the immutable
+  [ggml-org GGUF revision](https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/tree/b9e4379657e1450d04d02eec8e345667265b0a00)
+  `b9e4379657e1450d04d02eec8e345667265b0a00`: `SmolVLM-256M-Instruct-Q8_0.gguf`,
+  SHA-256 `2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65`, and
+  `mmproj-SmolVLM-256M-Instruct-Q8_0.gguf`, SHA-256
+  `7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd`.
 
-The archive digest comes from the
-[llama.cpp build attestation](https://github.com/ggml-org/llama.cpp/attestations/44860492),
-and the model files come from the immutable
-[Qwen GGUF revision](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/tree/d38d39f5972e27cd58023f9b1e9f994b0c85ca47).
+The server and the model files stay outside the DriveBench `uv` environment, in
+the ignored `tmp/` area. Download the four model files once:
 
-On a native Ubuntu x86_64 checkout, install `curl` and GNU `time`, then
-download the three artifacts into the ignored `tmp/` area. `Xvfb` is optional:
-see the render path below.
+```bash
+mkdir -p tmp/native-vlm
+
+curl --fail --location \
+  --output tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
+  https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/d38d39f5972e27cd58023f9b1e9f994b0c85ca47/Qwen3VL-2B-Instruct-Q4_K_M.gguf
+curl --fail --location \
+  --output tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf \
+  https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/d38d39f5972e27cd58023f9b1e9f994b0c85ca47/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf
+curl --fail --location \
+  --output tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf \
+  https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/b9e4379657e1450d04d02eec8e345667265b0a00/SmolVLM-256M-Instruct-Q8_0.gguf
+curl --fail --location \
+  --output tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf \
+  https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/b9e4379657e1450d04d02eec8e345667265b0a00/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf
+printf '%s  %s\n%s  %s\n%s  %s\n%s  %s\n' \
+  089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae \
+  tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
+  f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82 \
+  tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf \
+  2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65 \
+  tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf \
+  7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd \
+  tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf | sha256sum --check
+```
+
+Then the Linux CPU server, or [the Vulkan build](#gpu-the-vulkan-build-of-the-same-pin)
+on a GPU, or [the macOS arm64 build](#apple-silicon-the-macos-arm64-build-of-the-same-pin)
+on Apple silicon:
 
 ```bash
 mkdir -p tmp/native-vlm/llama-b10771
@@ -159,111 +190,12 @@ printf '%s  %s\n' \
   tmp/native-vlm/llama-b10771-bin-ubuntu-x64.tar.gz | sha256sum --check
 tar -xzf tmp/native-vlm/llama-b10771-bin-ubuntu-x64.tar.gz \
   -C tmp/native-vlm/llama-b10771
-
-curl --fail --location \
-  --output tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
-  https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/d38d39f5972e27cd58023f9b1e9f994b0c85ca47/Qwen3VL-2B-Instruct-Q4_K_M.gguf
-curl --fail --location \
-  --output tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf \
-  https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/d38d39f5972e27cd58023f9b1e9f994b0c85ca47/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf
-printf '%s  %s\n%s  %s\n' \
-  089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae \
-  tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
-  f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82 \
-  tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf | sha256sum --check
 ```
-
-Find the extracted server path, make sure the Git checkout is clean, and run the
-single acceptance command:
-
-```bash
-LLAMA_SERVER=$(find tmp/native-vlm/llama-b10771 \
-  -type f -name llama-server -print -quit)
-
-./scripts/native-platform-check.sh \
-  --llama-archive tmp/native-vlm/llama-b10771-bin-ubuntu-x64.tar.gz \
-  --llama-server "${LLAMA_SERVER}" \
-  --model tmp/native-vlm/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
-  --mmproj tmp/native-vlm/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf
-```
-
-The validator refuses WSL, containers, non-Ubuntu/non-x86_64 hosts, dirty
-checkouts, version drift, and hash drift. It creates the frozen native `uv`
-environment and chooses where MetaDrive renders: on a private Xvfb display when
-`Xvfb` is installed and draws a valid camera frame, and otherwise with no
-display at all, where Panda3D renders through its headless EGL pipe, as it does
-on a GPU server without X. Either way it records the Panda3D pipe and OpenGL
-driver that drew the frame in `render/`, and it refuses only when neither path
-draws one. It then runs the native simulator baseline, captures one probe corpus, and
-reuses those exact inputs for schema-off and schema-on inference. Schema-off
-decoding is evidence only, recorded in each round's `acceptance.json`; every
-schema-on scene must decode. It then runs a
-paced closed loop of 100 steps that must receive successful responses, grant
-model authority, avoid runtime errors/collision/off-road termination, and replay
-with zero mismatches. The complete model sequence is repeated after a clean
-server restart. Timing, peak simulator RSS, sampled server RSS, commands, logs,
-host identity, and artifact hashes are written under
-`artifacts/native-platform-validation/<UTC timestamp>/` without overwriting an
-earlier run.
-
-Probe semantic scores remain evidence for model-quality work; they do not turn a
-working transport/runtime qualification into a failure. CPU-only settings make
-the accepted baseline independent of a discrete GPU, and they are how a machine
-without one serves both models. The Qwen rounds also need each answer within the
-closed loop's pacing, 2 s of simulated time at a quarter of real time, and a
-CPU-only server has so far answered Qwen too slowly for that, so on such a
-machine those rounds fail while the baseline passes. Accelerated variants need
-their own complete evidence bundle before they become supported profiles. The
-server and model remain outside the DriveBench `uv` environment.
-
-`--vulkan` produces that bundle for
-[the Vulkan build](#gpu-the-vulkan-build-of-the-same-pin): pass it with that
-archive and the `llama-server` extracted from it. Every round then serves with
-`--n-gpu-layers 99` in place of `--n-gpu-layers 0 --no-mmproj-offload`, the
-validator refuses a build that lists no Vulkan device, and `host.json` records
-the GPU, its driver, and the devices the build lists.
-
-### SmolVLM on the same server: the Assignment 2 experiment
-
-Whether teams can develop against SmolVLM-256M on Linux decides part of
-Assignment 2. The validator answers it as an optional experiment once the
-simulator baseline (N0-N4) passes, whatever the Qwen rounds' result, with the
-files the 3 September Linux container trial used, from the immutable
-[ggml-org GGUF revision](https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/tree/b9e4379657e1450d04d02eec8e345667265b0a00):
-
-- `SmolVLM-256M-Instruct-Q8_0.gguf`, SHA-256
-  `2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65`;
-- `mmproj-SmolVLM-256M-Instruct-Q8_0.gguf`, SHA-256
-  `7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd`.
-
-```bash
-curl --fail --location \
-  --output tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf \
-  https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/b9e4379657e1450d04d02eec8e345667265b0a00/SmolVLM-256M-Instruct-Q8_0.gguf
-curl --fail --location \
-  --output tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf \
-  https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/b9e4379657e1450d04d02eec8e345667265b0a00/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf
-printf '%s  %s\n%s  %s\n' \
-  2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65 \
-  tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf \
-  7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd \
-  tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf | sha256sum --check
-```
-
-Add `--smolvlm-model tmp/native-vlm/SmolVLM-256M-Instruct-Q8_0.gguf` and
-`--smolvlm-mmproj tmp/native-vlm/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf` to the
-acceptance command. Gate `n7-smolvlm` then serves SmolVLM under JSON Schema
-output ([`configs/vla-probe-smolvlm-llama-structured.yaml`](../configs/vla-probe-smolvlm-llama-structured.yaml)), requires every
-probe scene to decode, runs a team's closed loop with `--submission submission`
-([`configs/demo-vla-smolvlm-llama.yaml`](../configs/demo-vla-smolvlm-llama.yaml)) with zero runtime errors, and replays
-it with zero mismatches. Model authority is recorded but not required: the
-safety floor is expected to reject SmolVLM's answers for low confidence. The
-result never changes the validator's overall result.
 
 ### Serving a model for Assignment 2
 
-Assignment 2 serves one model at a time on port 8000, with the flags the
-validator uses and the files downloaded above. For SmolVLM:
+Assignment 2 serves one model at a time on port 8000, with the files
+downloaded above. For SmolVLM:
 
 ```bash
 LLAMA_SERVER=$(find tmp/native-vlm/llama-b10771 -type f -name llama-server -print -quit)
@@ -295,8 +227,6 @@ seed and, with `--no-cache-prompt`, gives the same request and seed the same
 answer however often it is asked, as the CPU build does; the answers
 themselves differ from the CPU build's, as they differ between machines. The
 first request after installing is slow while the driver compiles its shaders.
-It is a supported profile: the validator's bundle for it, made with `--vulkan`,
-is successful, both Qwen rounds included.
 
 ### Apple silicon: the macOS arm64 build of the same pin
 
@@ -306,9 +236,8 @@ build, on Metal, serving the same pinned model files:
 - `llama-b10771-bin-macos-arm64.tar.gz`, SHA-256
   `371bb6c01543c8b748e1404e23a5cb09b2bc7484df9b90febf5c068f04adec33`.
 
-Download the archive and the four model files, with the `curl` commands above
-for the model files, then check them all. The validator refuses a non-Linux
-host, so `shasum` checks them here:
+Download the archive, and the four model files with the `curl` commands above,
+then check them all with `shasum`:
 
 ```bash
 mkdir -p tmp/native-vlm/llama-b10771-macos
@@ -354,8 +283,7 @@ are, so `--seed n` works as on Linux: with `--no-cache-prompt` the same request
 and seed get the same answer. A prompt counts as many tokens as on the grading
 server, and the measures point the way they do there, though the answers
 themselves differ, as they differ between machines. Measure your own latency, as
-the brief's "Choosing a realtime factor" says. The acceptance validator does not
-cover this build.
+the brief's "Choosing a realtime factor" says.
 
 ## Apple Silicon local server: MLX-VLM
 
@@ -415,11 +343,6 @@ uv run metadrive-starter probe \
 
 </details>
 
-MLX now offers Linux backends, so an equivalent isolated `uvx` experiment may be
-evaluated on suitable Linux hardware. It is not a supported course profile until
-that exact engine/backend/model combination passes the Linux acceptance sequence;
-the llama.cpp path remains the baseline.
-
 ## Vertex course provider
 
 Vertex is part of the required coursework. Instructors provide the account and
@@ -476,47 +399,6 @@ and emergency safety remain active regardless of provider output.
 
 Instructor provisioning, quotas, billing administration, and hidden evaluation
 operations live only in the instructor documentation.
-
-<details>
-<summary>Reviewed cloud capture and offline conversion</summary>
-
-The fixed cloud-capture workflow performs exactly five attempts: two preflight
-requests followed by three exact open-loop scenes. It requires explicit
-`--execute` confirmation and never retries.
-
-```bash
-uv run metadrive-starter probe \
-  --scenario clear-straight \
-  --scenario stopped-vehicle \
-  --scenario red-light-with-traffic \
-  --output-dir tmp/vertex-inputs-01
-
-uv run metadrive-starter vertex-capture \
-  --replay-from tmp/vertex-inputs-01 \
-  --output-dir tmp/vertex-capture-01 \
-  --execute
-```
-
-After policy review, convert captured responses into sanitized offline fixtures:
-
-```bash
-uv run metadrive-starter provider-fixtures \
-  --source-dir tmp/vertex-capture-01/probes \
-  --output-dir tmp/reviewed-provider-fixtures \
-  --fixture-prefix vertex-course \
-  --scenario clear-straight \
-  --scenario stopped-vehicle \
-  --scenario red-light-with-traffic \
-  --reviewed
-```
-
-Provider response IDs remain excluded unless staff explicitly retain them after
-policy review. Credentials, project IDs, private data, and unreviewed/raw
-captures must not enter student submissions or public artifacts. Reviewed,
-sanitized prompt/image fixtures may be published through the checked fixture
-workflow.
-
-</details>
 
 ## In-process model option
 

@@ -64,6 +64,12 @@ def test_course_ships_its_notebooks() -> None:
         assert {OBSERVATION_INSPECTOR, PROBE_ANALYSIS} <= set(COURSE_NOTEBOOKS)
 
 
+# The tests marked instructor in this file pin what the release ships:
+# notebooks without outputs, the PID lab starting from the shipped controller
+# with every task still to do, the shipped observation and arbiter as they are
+# before a team's work, and the shipped agent.yaml's toggles. That work changes
+# exactly that, so they run only where course/instructor/ is, never on a team's
+# machine.
 @pytest.mark.parametrize(
     "notebook",
     [
@@ -74,6 +80,7 @@ def test_course_ships_its_notebooks() -> None:
     ],
     ids=lambda path: path.stem,
 )
+@pytest.mark.instructor
 def test_course_notebook_runs_and_ships_without_outputs(notebook: Path) -> None:
     _run(notebook)
 
@@ -86,6 +93,7 @@ SHIPPED_CONTROLLER = (PROJECT_ROOT / "submission" / "controller.py").read_text()
 HANDICAP = "self.speed_loop = PID(replace(settings.speed_pid, kp=0.03))"
 
 
+@pytest.mark.instructor
 def test_pid_lab_starts_from_a_copy_of_the_shipped_controller() -> None:
     # Teams copy the cell back below the docstring of submission/controller.py.
     below_docstring = SHIPPED_CONTROLLER[SHIPPED_CONTROLLER.index('"""', 3) + 3 :]
@@ -109,6 +117,7 @@ def test_pid_lab_drives_its_own_controller_or_the_submission() -> None:
     assert namespace["copied"] is True
 
 
+@pytest.mark.instructor
 def test_pid_lab_shows_a_team_every_task_still_to_do() -> None:
     namespace = _run(PID_LAB)
 
@@ -118,6 +127,7 @@ def test_pid_lab_shows_a_team_every_task_still_to_do() -> None:
     assert [result.passed for result in namespace["results"]] == [False] * 6
 
 
+@pytest.mark.instructor
 def test_pid_lab_notices_work_not_yet_copied_into_the_submission() -> None:
     assert HANDICAP in SHIPPED_CONTROLLER
 
@@ -130,6 +140,7 @@ def test_pid_lab_notices_work_not_yet_copied_into_the_submission() -> None:
 
 
 @ASSIGNMENT_2
+@pytest.mark.instructor
 def test_observation_inspector_builds_the_shipped_observation_through_the_seam() -> None:
     namespace = _run(OBSERVATION_INSPECTOR)
 
@@ -164,6 +175,7 @@ def test_probe_analysis_scores_the_example_in_opposite_directions() -> None:
 
 
 @ASSIGNMENT_2
+@pytest.mark.instructor
 def test_observation_inspector_builds_the_public_interpretation_scenes_as_grading_does() -> None:
     namespace = _run(OBSERVATION_INSPECTOR)
 
@@ -179,6 +191,7 @@ def test_observation_inspector_builds_the_public_interpretation_scenes_as_gradin
 
 
 @ASSIGNMENT_2
+@pytest.mark.instructor
 def test_observation_inspector_ends_each_task_with_the_gates_checks() -> None:
     stub = (PROJECT_ROOT / "submission" / "observation.py").read_text()
     todos = [
@@ -238,6 +251,7 @@ def test_observation_inspector_checks_an_observation_as_the_gates_do(capsys) -> 
 
 
 @ASSIGNMENT_2
+@pytest.mark.instructor
 def test_probe_analysis_puts_every_answer_through_the_submitted_arbiter(capsys) -> None:
     namespace = _run(PROBE_ANALYSIS)
     output = capsys.readouterr().out

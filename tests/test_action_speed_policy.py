@@ -60,7 +60,7 @@ def test_action_speed_policy_enforces_local_action_mapping_as_a_ceiling(
 @pytest.mark.parametrize("mode", ["shadow", "enforce"])
 def test_action_speed_policy_never_raises_a_lowered_speed(mode: str) -> None:
     # An arbiter may lower the speed, and the floor may cap it; the policy keeps
-    # what they left (the monotone restriction, ADR-0001).
+    # what they left (the monotone restriction).
     decision = _policy(mode).evaluate(HighLevelAction.KEEP_LANE, 1.0)
 
     assert decision.mapped_target_speed_mps == 10.0

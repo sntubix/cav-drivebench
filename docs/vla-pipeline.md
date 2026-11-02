@@ -249,9 +249,9 @@ simulated time, `L`, the wall-clock latency times the realtime factor:
   The runtime captures and submits a frame on one tick, so under it the limit
   guards the pipeline's other callers, never the loop's pacing.
 
-Measured with the pinned Qwen3-VL-2B under `llama-server` on a laptop without a
-discrete GPU, where an answer takes about 4 wall seconds, under the model demos'
-3 s horizon ([`configs/demo-vla-qwen3-vl-2b-llama.yaml`](../configs/demo-vla-qwen3-vl-2b-llama.yaml)):
+A worked example. Suppose an answer takes 4 wall seconds, as the pinned
+Qwen3-VL-2B can on a CPU, under the model demos' 3 s horizon
+([`configs/demo-vla-qwen3-vl-2b-llama.yaml`](../configs/demo-vla-qwen3-vl-2b-llama.yaml)):
 
 | Realtime factor | `L` | The floor | Authority |
 | --- | --- | --- | --- |
@@ -259,9 +259,9 @@ discrete GPU, where an answer takes about 4 wall seconds, under the model demos'
 | 0.5 | 2.0 s | accepts answers at the limit, refuses those just over it | gaps of about a second between commands |
 | 1.0 | 4.0 s | refuses every answer as stale | none |
 
-On a GPU, where an answer takes about a second, the same drive holds continuous
-authority at full speed. The Assignment 2 brief's "Choosing a realtime factor"
-turns this into a recipe. Pacing never changes simulation timestamps, command
+Were an answer to take a second instead, the same drive would hold continuous
+authority at full speed. Your own latency decides: the Assignment 2 brief's
+"Choosing a realtime factor" turns the measurement into a recipe. Pacing never changes simulation timestamps, command
 age, action horizon, PID time step, or fault timing: `simulator.realtime` and
 `realtime_factor` change only how old each answer is when it arrives.
 

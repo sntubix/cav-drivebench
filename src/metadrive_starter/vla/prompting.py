@@ -210,7 +210,7 @@ def build_vla_scene_context(
 
 def withhold_scene(scene: LocalScene | None, withheld: Iterable[str]) -> LocalScene | None:
     """``scene`` as an observation request carries it, without the fields ``withheld``
-    names (ADR-0008). With nothing withheld, ``scene`` itself.
+    names. With nothing withheld, ``scene`` itself.
 
     Lane clearance is judged here, on the whole scene, so that a request may keep it
     while withholding the objects it is judged from.

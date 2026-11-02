@@ -1,27 +1,18 @@
-"""Build the two releases of one commit: the student and instructor archives.
+"""Build the two releases of one commit: the student and the instructor archives.
 
-The student release ships the structural-gate runner, the public scenarios, and
-the assignment packs. The instructor release is the whole commit, and adds what
-course/instructor/ holds: hidden manifests and tests, reference solutions, and
-grading integration. Everything withheld from teams lives there, because
-repository location is not access control: only this module's exclusions keep it
-out of the student release. The student release also leaves out maintainer
-documentation: the guides and notes at the repository root, and docs/adr/ and
-docs/agents/, and every path course/instructor/release-plan.yaml holds back
-until its assignment is released. Before writing either release the build looks for withheld
-material that escaped, for a student document linking to a withheld file, for a
-shipped stub that its marked reference no longer generates, and for credentials
-in either release, and refuses to write anything if it finds one.
+The student release ships the structural-gate runner, the public scenarios, the
+fixtures, and the assignment packs; the instructor archive is the whole commit.
+Everything teams do not get is withheld here, because repository location is
+not access control: the build leaves out course/instructor/, the maintainer
+documentation, and whatever the release plan holds back until its assignment is
+released, and before writing either release it looks for withheld material that
+escaped, for a student document linking to a withheld file, for a shipped stub
+that its marked reference no longer generates, and for credentials, and refuses
+to write anything if it finds one.
 
-Teams clone the student repository and pull each release into their work, so
-``--student-repo`` commits a release onto a clone of it, as one more commit on
-its history. It refuses a release that would change or remove a file under
-submission/ that an earlier release shipped, since teams own those files.
-
-Run from the repository root:
-
-    uv run python -m metadrive_starter.release
-    uv run python -m metadrive_starter.release --student-repo ../cav-drivebench
+``--student-repo`` commits a release onto a clone of the student repository,
+which teams pull from, and refuses a release that would change or remove a file
+teams own.
 """
 
 from __future__ import annotations

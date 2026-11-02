@@ -273,7 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture_parser = subparsers.add_parser(
         "vertex-capture",
-        help="run the fixed five-request Vertex evidence capture",
+        help="ask Vertex about recorded probe inputs, five requests at most, for reviewed fixtures",
     )
     capture_parser.add_argument(
         "--config", type=Path, default=Path("configs/default.yaml")

@@ -108,7 +108,7 @@ class VLAInferencePipeline:
         self.observation_builder = observation_builder
         # Named in every observation request, so a builder can suit its model.
         self.model_id = model_id
-        # Measured-scene fields no observation request carries (ADR-0008).
+        # Measured-scene fields no observation request carries.
         self.withheld_scene_fields = withheld
         # Every observation built, and those sent without every output-contract line.
         self.observations_built = 0

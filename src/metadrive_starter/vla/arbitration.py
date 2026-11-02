@@ -8,7 +8,7 @@ It also reviews every control tick, whether or not an assessment arrived, and
 may end the model command that holds authority: when the model fails, when that
 command grows old, or when the scene no longer supports it.
 
-An arbiter may only take authority away (the monotone restriction, ADR-0001): lower
+An arbiter may only take authority away (the monotone restriction): lower
 the proposed target speed, lower the confidence, or decline by replacing the
 proposed action with ``REQUEST_FALLBACK``. Only those three fields of its answer
 reach the vehicle; everything else stays as the model reported it. A review may

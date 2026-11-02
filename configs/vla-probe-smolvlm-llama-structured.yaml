@@ -1,6 +1,5 @@
-# SmolVLM-256M-Instruct Q8_0 under the pinned llama-server, grammar-constrained.
-# The Assignment 2 planning experiment in scripts/native-platform-check.sh
-# (--smolvlm-model, --smolvlm-mmproj) serves it under this alias.
+# SmolVLM-256M-Instruct Q8_0 under the pinned llama-server, grammar-constrained,
+# served under this alias (docs/model-providers.md).
 
 camera:
   enabled: true
@@ -26,7 +25,7 @@ vla:
   maximum_clock_skew_s: 0.05
   # Assignment 2's observation gets no measured objects or traffic lights, so the
   # model must find them in the image; arbitration still sees the whole measured
-  # scene (ADR-0008). Instructor-owned: agent.yaml cannot change it.
+  # scene. Instructor-owned: agent.yaml cannot change it.
   request_scene_fields:
     lanes: true
     lane_clearance: true

@@ -25,32 +25,6 @@ from metadrive_starter.simulation import RunSummary
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.instructor
-def test_checked_in_public_and_hidden_suites_use_same_locked_contract() -> None:
-    public = load_race_plan(PROJECT_ROOT / "configs/race-public-v1.yaml")
-    hidden = load_race_plan(
-        PROJECT_ROOT / "course/instructor/race-hidden-v1.yaml"
-    )
-
-    assert public.visibility == "public"
-    assert hidden.visibility == "hidden"
-    assert len(public.scenarios) == 5
-    assert len(hidden.scenarios) == 5
-    assert public.runtime == hidden.runtime
-    assert public.runtime.realtime_factor == 1.0
-    assert {scenario.seed for scenario in public.scenarios}.isdisjoint(
-        scenario.seed for scenario in hidden.scenarios
-    )
-    assert any(
-        scenario.stopped_vehicle_ahead_m is not None
-        for scenario in public.scenarios
-    )
-    assert any(
-        scenario.stopped_vehicle_ahead_m is not None
-        for scenario in hidden.scenarios
-    )
-
-
 def test_race_config_locks_world_and_retains_agent_tuning(tmp_path) -> None:
     plan = load_race_plan(PROJECT_ROOT / "configs/race-public-v1.yaml")
     scenario = plan.scenarios[0]

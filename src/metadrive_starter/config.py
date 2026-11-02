@@ -38,7 +38,7 @@ class PIDSettings:
 # The starting PID gains, and the speed loop's reset threshold, are written
 # only in configs/pid.yaml. Every configuration takes them from there, and a
 # configuration file that repeats one is refused (#28). The reference tunes its
-# own in its agent.yaml, as a team does (ADR-0007).
+# own in its agent.yaml, as a team does.
 PID_CONFIG = Path(__file__).resolve().parents[2] / "configs" / "pid.yaml"
 _PID_LOOPS = ("speed_pid", "steering_pid", "lateral_pid")
 _PID_CONFIG_KEYS = ("speed_pid_reset_threshold_mps", *_PID_LOOPS)
@@ -245,7 +245,7 @@ class FixtureProviderSettings:
 
 @dataclass(frozen=True)
 class RequestSceneFields:
-    """Which measured-scene fields an observation request carries (ADR-0008).
+    """Which measured-scene fields an observation request carries.
 
     Instructor-owned: no agent.yaml may set them. A withheld field never reaches
     the observation builder, so the model must find it in the image; arbitration

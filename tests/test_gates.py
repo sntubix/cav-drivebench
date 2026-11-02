@@ -489,7 +489,7 @@ def test_route_that_never_completes_costs_its_driving_credit_and_no_gate(
 def test_route_that_never_completes_fails_no_gate_where_routes_are_not_scored(
     tmp_path: Path,
 ) -> None:
-    # How the controller drives is never a gate (ADR-0006). Assignment 2 marks no
+    # How the controller drives is never a gate. Assignment 2 marks no
     # driving at all, so a route its controller fails there costs nothing.
     submission = _submission(tmp_path / "submission", STATIONARY)
     route = GateScenario(scenario_id="straight", map="S", seed=0, horizon=600)
@@ -901,7 +901,7 @@ def test_arbiter_beyond_the_proposal_fails_the_monotone_gate_and_the_run_drives_
 
 @pytest.mark.needs("fixtures")
 def test_arbiter_that_exits_on_a_new_episode_stops_the_run_in_a_report(tmp_path: Path) -> None:
-    # An exception from begin_episode() stops the run (ADR-0004), and so does an
+    # An exception from begin_episode() stops the run, and so does an
     # exit, named as such rather than as a call that never answered.
     source = ARBITRATION.replace(
         "    def begin_episode(self):\n        pass\n",
@@ -1155,7 +1155,7 @@ FULL_LOCK = WELL_BEHAVED.replace(
 
 @pytest.mark.needs("fixtures")
 def test_a_fault_scenario_that_leaves_the_road_fails_no_gate(tmp_path: Path) -> None:
-    # Leaving the road is the controller's driving, which no gate judges (ADR-0006);
+    # Leaving the road is the controller's driving, which no gate judges;
     # the report still says it happened.
     report = _fault_gates(tmp_path, FULL_LOCK)
 

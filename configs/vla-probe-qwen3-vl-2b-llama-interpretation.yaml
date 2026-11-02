@@ -23,7 +23,7 @@ vla:
   # The Qwen structured profile as scene interpretation asks it. Assignment 2's
   # observation gets no measured objects or traffic lights, so the model must find
   # them in the image, and here no lane clearance either, which is judged from
-  # those same objects and would say on which side one stands (ADR-0008).
+  # those same objects and would say on which side one stands.
   # Instructor-owned: agent.yaml cannot change it.
   request_scene_fields:
     lanes: true

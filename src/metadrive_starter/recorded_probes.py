@@ -12,10 +12,7 @@ whenever it is captured. Its frame is not: a few dozen pixels differ between
 renders, even on one machine, and more between GPU vendors. Nothing here
 matches frames by hash.
 
-Re-record after any change to MetaDrive, the probe manifest, the output
-contract, or scene measurement, into a new directory:
-
-    uv run python -m metadrive_starter.recorded_probes --output-dir tmp/recorded-probes-01
+Run as a module, with ``--output-dir``, to record a catalog into a new directory.
 """
 
 from __future__ import annotations

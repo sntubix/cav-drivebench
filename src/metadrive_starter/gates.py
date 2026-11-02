@@ -8,7 +8,7 @@ of its controller, half from how it drove the manifest's routes. The score never
 decides a gate.
 
 A route that crashes, leaves the road, or does not arrive is part of how the
-submission drove, and only a run an error stopped fails a gate (ADR-0006). Where
+submission drove, and only a run an error stopped fails a gate. Where
 routes are scored it earns no driving credit; where they are not, it costs
 nothing. A team cannot drive the hidden routes, and a tuning choice that leaves
 one of them should cost that route, not every mark.
@@ -145,9 +145,7 @@ class CreditBounds:
 # Assignment 1's score. A scenario's driving credit weighs its time against par,
 # its speed error once launched, and its lateral error.
 # Full credit sits below what the reference reaches on its tuned gains, so
-# tuning earns driving credit; a sweep of gains on 6 October 2026 halved the
-# speed error and cut the lateral error to a fifth, on the hidden routes as on
-# the public ones. Time earns full credit at par and no more, so no setting buys
+# tuning earns driving credit. Time earns full credit at par and no more, so no setting buys
 # credit by finishing faster than the reference, and lowering the target speed
 # costs more time credit than it saves in speed error.
 IMPLEMENTATION_SHARE = 0.5
@@ -926,7 +924,7 @@ def _bounded_outputs(drives: list[_Drive]) -> GateResult:
 
 
 def _runs_finish(drives: list[_Drive], *, scored: bool) -> GateResult:
-    """The route gate: only an error fails it (ADR-0006).
+    """The route gate: only an error fails it.
 
     A route that crashes, leaves the road, or does not arrive is how the
     controller drove, never a gate. Where routes are scored it earns no driving
@@ -1050,7 +1048,7 @@ def _faults_survived(drives: list[_Drive]) -> GateResult:
     """The fault gate: only a run an error stopped fails it.
 
     A fault scenario need not arrive, and one that crashes or leaves the road is
-    how the controller drove, which no gate judges (ADR-0006): the detail says so.
+    how the controller drove, which no gate judges: the detail says so.
     """
     if not drives:
         return GateResult(FAULTS_SURVIVED, GateStatus.NOT_RUN, "no fault scenario was driven")

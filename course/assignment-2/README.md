@@ -14,6 +14,15 @@ believe what it says back, arbitration. Rewording a prompt answers neither: the
 prompt is configuration, and its measured effect is what earns marks. The
 [glossary](../../CONTEXT.md) defines the course's terms.
 
+**What Assignment 2 marks.** Your observation and arbiter sit in the live
+driving system and shape how the car drives, and the gates drive routes and
+fault scenarios with them to check that nothing breaks. The marks come from
+still scenes: one frame, one observation, one assessment at a time, each in a
+fresh episode, as [How you are marked](#how-you-are-marked) says. How well the
+car drives earns nothing, history your arbiter keeps across assessments earns
+nothing, and `review` stays as shipped. Drive live to explore your work and to
+show it at the oral defence.
+
 ## Steps
 
 1. [Set up](#set-up), and check that the shipped files pass Assignment 2's
@@ -301,8 +310,8 @@ and barriers. It shows
 the image and the text side by side, what your file and each `agent.yaml` value
 change from DriveBench's original, and what lower resolutions keep of the
 smallest things the probe checks: what the model *receives*, never what it
-answers. The notebooks are never submitted or graded; saving one with its
-outputs fails a maintainers' test on your machine, which you can ignore.
+answers. The notebooks are never submitted or graded, so save them as you
+like.
 
 ## Your arbiter
 
@@ -389,28 +398,6 @@ give 1.00 only because their answers differ in confidence as well as in
 agreement, so never pool runs from different sources.
 
 </details>
-
-### Faults
-
-Six fault kinds are published. The gate manifest
-[`configs/gates-assignment-2.yaml`](../../configs/gates-assignment-2.yaml) schedules one of each, and
-[Evaluation](../../docs/evaluation.md#seeded-closed-loop-evaluation-and-scheduled-faults)
-explains the format. What reaches your arbiter:
-
-| Fault | What `arbitrate` sees |
-| --- | --- |
-| `camera_dropout` | no new request, so no assessment; the command that holds authority grows old |
-| `lidar_dropout` | with LiDAR as the safety source, a scene with `valid` false and no objects |
-| `provider_timeout` | no assessment |
-| `provider_error` | no assessment |
-| `provider_latency` | an answer that arrives late; `now_s` minus `issued_at_s` is its age |
-| `malformed_output` | no assessment |
-
-The three provider failures reach only `review`, as `request.failure`
-(`timeout`, `transport`, and `invalid_response`), and Assignment 2 leaves it
-returning True, so each leaves the last command you let through to drive until
-its action horizon ends. Retrying belongs to Assignment 3. Grading uses other
-timings, maps, and combinations of the same kinds, including two at once.
 
 ## Probing your observation
 
@@ -581,11 +568,17 @@ shipped with them. To check the zip, run the gates of
 
 ## How you are marked
 
-Assignment 2 is marked automatically, out of 100, from hidden runs of the
-open-loop probe: still scenes, one frame and one answer at a time. The vehicle
-is never driven for a mark; a live drive is for your own exploration and the
-oral defence. There is no written report: your team explains and analyses its
-work at the oral defence.
+Assignment 2 is marked out of 100, in two parts. Hidden runs of the open-loop
+probe, still scenes, one frame and one answer at a time, compute points, and
+those points carry most of the mark. Staff then review every submission,
+reading its code against those runs, and that review is the rest of the mark:
+points the code does not account for are not earned by the runs alone, so a
+number tuned against the public scenes is not a mark. Write code a reader can
+follow: document each rule and each value where it is written, and say what it
+is for. The vehicle is never driven for a
+mark; a live drive is for your own exploration and the oral defence. There is
+no written report: your team explains and analyses its work at the oral
+defence.
 Teams never produce a graded number: public scenes, recorded answers, and
 public faults are for your own measurements. This marking does not change once
 Assignment 2 is released: if a correction is ever needed, it is announced and
@@ -614,10 +607,29 @@ deadline, and only the last upload is graded; once the deadline closes there
 are no resubmissions. The deadlines leave time to run every check before
 handing in. A failure caused on the grading side is graded again by staff.
 
+Faults are part of the floor, not of any mark. The public gate run schedules
+one scenario of each of the six published kinds; grading uses other timings,
+maps, and combinations, two at once. Your arbiter has only to survive them, so
+this is what each hands it:
+
+| Fault | What `arbitrate` sees |
+| --- | --- |
+| `camera_dropout` | no new request, so no assessment; the command that holds authority grows old |
+| `lidar_dropout` | with LiDAR as the safety source, a scene with `valid` false and no objects |
+| `provider_timeout` | no assessment |
+| `provider_error` | no assessment |
+| `provider_latency` | an answer that arrives late; `now_s` minus `issued_at_s` is its age |
+| `malformed_output` | no assessment |
+
+The three provider failures reach only `review`, as `request.failure`, which
+Assignment 2 leaves returning True, so each leaves the last command you let
+through to drive until its action horizon ends. Retrying belongs to
+Assignment 3.
+
 ### The hidden probes
 
-Every automatic mark comes from runs on instructor hardware, never from a
-number a team produces:
+Every point comes from runs on instructor hardware, never from a number a
+team produces:
 
 - **The models** are the pinned Qwen3-VL-2B, `Q4_K_M`, and SmolVLM-256M,
   `Q8_0`, under the pinned `llama-server`, as in
@@ -661,9 +673,10 @@ number a team produces:
 
 ### The mark
 
-Four measures earn 60 points between them, and the mark is their total scaled
-to 100: syntax counts for a sixth of it, scene interpretation a quarter,
-SmolVLM's accepted answers a twelfth, and tactical decision half.
+Four measures earn 60 points between them, and the computed points are their
+total scaled to 100, which the staff review above then completes: syntax counts
+for a sixth of it, scene interpretation a quarter, SmolVLM's accepted answers a
+twelfth, and tactical decision half.
 
 #### Syntax: 10 points
 
@@ -758,8 +771,9 @@ With structured output on. The assessments form one pool: Qwen's and
 SmolVLM's answers to the hidden probe scenes, and the withheld ones. Nothing is
 marked per model, so an unsound SmolVLM answer counts as an unsound Qwen answer
 does. Each assessment goes through your `arbitrate` in a fresh episode, as in a
-closed loop: `begin_episode()`, then that one assessment, with the scene
-measured with its frame. It arrives late, as in a closed loop. A model's own
+closed loop: `begin_episode()`, then that one assessment, with its still scene
+stamped at the time it arrives, as the live loop hands your arbiter the scene
+measured now. It arrives late, as in a closed loop. A model's own
 answer arrives as late as the grading server takes to write it with its GPU to
 itself, counted from the tokens the server reports in `usage` rather than by the
 clock, so the server's load never moves your mark: 0.34 s, plus 0.18 ms for each

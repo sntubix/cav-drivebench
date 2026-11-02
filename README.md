@@ -37,8 +37,9 @@ brief says how its assignment is marked.
 `submission/agent.yaml` holds the tuning values your assignment permits.
 Everything else, including the simulator, route tracking, the safety floor,
 model providers, and evaluation, is instructor-owned foundation that your code
-calls but never edits. Run the public routes as often as you like; graded
-numbers come only from hidden routes that the instructors run.
+calls but never edits. Run the public routes and scenes as often as you like;
+graded numbers come only from hidden runs that the instructors make, and each
+brief says what its runs are.
 
 All assignments in the published course sequence are required. Instructors
 provide the cloud accounts used by the course, and the supplied cloud profiles

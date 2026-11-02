@@ -29,8 +29,8 @@ MMPROJ_SHA256="f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82"
 MODEL_ALIAS="drivebench-qwen3-vl-2b-q4-k-m"
 SERVER_PORT=8000
 
-# The optional Assignment 2 planning experiment: the files of the 3 September
-# Linux container trial, ggml-org/SmolVLM-256M-Instruct-GGUF at this revision.
+# The optional SmolVLM round: ggml-org/SmolVLM-256M-Instruct-GGUF at this
+# revision, the second model Assignment 2 serves.
 SMOLVLM_REVISION="b9e4379657e1450d04d02eec8e345667265b0a00"
 SMOLVLM_MODEL_FILENAME="SmolVLM-256M-Instruct-Q8_0.gguf"
 SMOLVLM_MODEL_SHA256="2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65"
@@ -80,9 +80,9 @@ Run the pinned native Ubuntu x86_64 VLM acceptance sequence:
   N5  two clean llama-server rounds, each with schema-off/on probe replay
       (schema-off as evidence only), paced model authority, zero-mismatch
       replay, and resource evidence
-  N7  optional, once N0-N4 pass, whatever N5's result: the Assignment 2
-      planning experiment, SmolVLM-256M under the same llama-server with JSON
-      Schema output. Its result is recorded but never changes the overall result.
+  N7  optional, once N0-N4 pass, whatever N5's result: SmolVLM-256M under
+      the same llama-server with JSON Schema output. Its result is recorded
+      but never changes the overall result.
 
 The accepted candidate is llama.cpp b10771 with Qwen3-VL-2B-Instruct Q4_K_M
 and its Q8_0 multimodal projector at the hashes documented in
@@ -704,7 +704,7 @@ run_native_vlm_round() {
   )
   command_text "${probe_unstructured[@]}" > "${round_dir}/probe-unstructured-command.txt"
   # Evidence only: decoding without the grammar's help measures prompt-following,
-  # a quality measure, so it never stops the round (ADR-0003). acceptance.json
+  # a quality measure, so it never stops the round. acceptance.json
   # records how many scenes decoded.
   local schema_off_status=0
   "${probe_unstructured[@]}" > "${round_dir}/probe-unstructured.log" 2>&1 \
@@ -948,7 +948,7 @@ required_gate n5-round-1 "Run pinned native VLM acceptance from a clean server s
 required_gate n5-round-2 "Repeat pinned native VLM acceptance from a clean server start" \
   run_native_vlm_round 2
 
-SMOLVLM_DESCRIPTION="Assignment 2 experiment: SmolVLM-256M under llama-server with JSON Schema"
+SMOLVLM_DESCRIPTION="SmolVLM-256M under llama-server with JSON Schema"
 if [[ -z "${SMOLVLM_MODEL_REL}" ]]; then
   record_not_run n7-smolvlm "${SMOLVLM_DESCRIPTION}" \
     "not requested: pass --smolvlm-model and --smolvlm-mmproj"
@@ -956,7 +956,7 @@ elif [[ "${smolvlm_ready}" != true ]]; then
   record_not_run n7-smolvlm "${SMOLVLM_DESCRIPTION}" \
     "blocked by a required gate before the model rounds"
 else
-  # A planning experiment, not platform acceptance: recorded, never decisive.
+  # Recorded, never decisive.
   run_gate n7-smolvlm "${SMOLVLM_DESCRIPTION}" run_smolvlm_round || true
 fi
 

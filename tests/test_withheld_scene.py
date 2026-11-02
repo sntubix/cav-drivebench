@@ -1,4 +1,4 @@
-"""The measured-scene fields an observation request withholds from the model (ADR-0008)."""
+"""The measured-scene fields an observation request withholds from the model."""
 
 import json
 import time

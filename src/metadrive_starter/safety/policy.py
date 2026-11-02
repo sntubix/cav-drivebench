@@ -15,7 +15,7 @@ from metadrive_starter.vla import VLACommand
 class HighLevelSafetyPolicy(Protocol):
     """The safety floor's command validation, as the runtime composes it.
 
-    Instructor-owned: no submission replaces it (ADR-0001). Teams restrict model
+    Instructor-owned: no submission replaces it. Teams restrict model
     authority above it, in arbitration.
     """
 

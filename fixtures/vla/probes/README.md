@@ -1,29 +1,26 @@
-# Reviewed VLA probe input catalogs
+# Recorded VLA probe scenes
 
-These catalogs contain exact, model-independent prompts and camera PNGs. They
-contain no credentials, project IDs, provider response IDs, or cloud
-configuration.
+These catalogs hold exact, model-independent probe inputs: the prompt that
+DriveBench's original observation built, and the camera PNG, for scenes that
+the Assignment 2 notebooks and the probe replay without MetaDrive. They contain
+no credentials, project IDs, provider response IDs, or cloud configuration. The
+frames ship, and no provider fixture is matched to them, so they serve on any
+machine. Do not edit or rerender a catalog: the files beside each frame hold
+its hashes, and a changed frame no longer replays.
 
-## The recorded catalog for the course notebooks
+## The eight public probe scenes
 
-`catalog-20261002-v5/` holds all eight public probe scenes, captured on 2 October
-2026 with [`configs/default.yaml`](../../../configs/default.yaml) and DriveBench's original observation. Each
-scene directory is ordinary probe output, schema 4, plus `local_scene.json`:
-the `LocalScene` measured with the frame, in the form event logs record it.
-`partial-occlusion` was recorded again on 29 October 2026, once static trucks
-stood on the road rather than 0.7 m above it; only its frame changed.
+`catalog-20261002-v5/` holds the eight public probe scenes, captured with
+[`configs/default.yaml`](../../../configs/default.yaml) and DriveBench's original observation. Each
+scene directory is ordinary probe output plus `local_scene.json`: the
+`LocalScene` measured with the frame, in the form event logs record it.
 `metadrive_starter.recorded_probes` loads them and rebuilds each scene's
 `ObservationRequest` exactly as `probe --submission` builds it, so the
-Assignment 2 notebooks run a team's `observation.py` on these scenes without
-MetaDrive. A test checks that the original observation rebuilt this way is
-byte-identical to each saved `prompt.txt`.
+Assignment 2 notebooks run your `observation.py` on these scenes without
+MetaDrive.
 
-The frames were rendered on Apple silicon. Rendering is not byte-reproducible:
-two captures on the same machine differed in up to 120 pixels per frame, and
-GPU vendors differ more. No provider fixture is matched to these frames, so
-they serve on any machine. They also replay without MetaDrive, which
-sends the saved original observation, for example to score a semantic-failure
-fixture on every scene:
+They also replay without MetaDrive, sending the saved original observation,
+for example to score a semantic-failure fixture on every scene:
 
 ```bash
 uv run metadrive-starter probe \
@@ -32,17 +29,6 @@ uv run metadrive-starter probe \
   --replay-from fixtures/vla/probes/catalog-20261002-v5 \
   --output-dir tmp/semantic-partial-occlusion-replay-01
 ```
-
-Re-record after any change to MetaDrive, the probe manifest, the output
-contract, or scene measurement, into a new directory, then review the frames
-before replacing the catalog:
-
-```bash
-uv run python -m metadrive_starter.recorded_probes --output-dir tmp/recorded-probes-01
-```
-
-The run also writes `summary.json`, which records absolute paths; leave it out
-of the catalog.
 
 ## The public interpretation scenes
 
@@ -59,8 +45,7 @@ that `score_hazards` scores against:
 - `truth_scene.json`: the scene measured to 80 m with the frame, so that a claim
   of an object past the 50 m radius pairs with it.
 
-No provider fixture is matched to these frames, and the frames ship, so they
-serve on any machine. They replay in id order, through your observation:
+They replay in id order, through your observation:
 
 ```bash
 uv run metadrive-starter probe \
@@ -74,19 +59,17 @@ uv run metadrive-starter probe \
 
 ## The Vertex capture catalog
 
-These inputs are paired with request-bound sanitized provider fixtures.
-
-`vertex-gemini-3.5-flash-lite-20260824/` contains the three inputs used by the
-first capped Vertex evidence run, in provider-fixture order:
+`vertex-gemini-3.5-flash-lite-20260824/` holds three scenes whose inputs are
+paired with request-bound sanitized provider fixtures, in provider-fixture
+order:
 
 1. `clear-straight`
 2. `stopped-vehicle`
 3. `red-light-with-traffic`
 
 Each scenario records prompt, PNG, RGB, dimensions, timestamp, and scenario
-metadata hashes. Do not rerender or edit these files: the corresponding
-`sanitized_capture` fixtures deliberately reject any different prompt or RGB
-content.
+metadata hashes, and the corresponding `sanitized_capture` fixtures reject any
+different prompt or RGB content.
 
 Replay without network access:
 

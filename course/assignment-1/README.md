@@ -147,9 +147,7 @@ Run it headlessly and open the executed copy it writes to `tmp/`:
 uv run --extra notebooks jupyter nbconvert --to notebook --execute course/assignment-1/pid-lab.ipynb --output-dir tmp
 ```
 
-Saving the notebook with its outputs is fine, though a course test that checks
-notebooks ship without outputs then fails on your machine; that test is for
-course maintainers, and you can ignore it.
+Saving the notebook with its outputs is fine.
 
 </details>
 

@@ -18,9 +18,7 @@ Every document contains a SHA-256 over its canonical content, excluding only `ar
 
 `source: synthetic` may omit request hashes so one artificial response can support general tests. `source: sanitized_capture` includes both the exact prompt and RGB SHA-256. It contains no credentials, endpoint headers, project IDs, or unreviewed user data. The checked Vertex fixtures omit provider response IDs while retaining model/version, latency, tokens, and raw model output.
 
-The live fixtures are intentionally request-bound. Their exact reviewed prompt/PNG capture catalog is checked in under `fixtures/vla/probes/vertex-gemini-3.5-flash-lite-20260824`; newly rendered images are not interchangeable evidence. Response replay reports recorded latency but does not sleep.
-
-They ship to teams because they replay only from that catalog: nothing is rendered, so the frames' GPU-dependent bytes never matter. A capture without its exact inputs stays instructor-only, since a frame rendered on another GPU vendor differs by a few pixels and no longer matches.
+The live fixtures are request-bound: they replay only from their exact reviewed prompt/PNG catalog, checked in under `fixtures/vla/probes/vertex-gemini-3.5-flash-lite-20260824`. Nothing is rendered, so the frames' GPU-dependent bytes never matter, and a newly rendered image, which differs by a few pixels, does not match. Response replay reports recorded latency but does not sleep.
 
 Run the reusable offline closed-loop demonstration from the repository root:
 
