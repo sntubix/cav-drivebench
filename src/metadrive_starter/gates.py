@@ -14,17 +14,20 @@ nothing. A team cannot drive the hidden routes, and a tuning choice that leaves
 one of them should cost that route, not every mark.
 
 When the base configuration enables the VLA subsystem, the routes are driven
-with the model asked through the team's observation.py and its assessments
-arbitrated by the team's arbitration.py, and three more gates check them: every
-observation built could be sent; neither held the control loop up, an
-observation past the request timeout or an arbiter call past one control step;
-and no arbiter answer granted more authority than the model proposed. An
+with the model asked when the team's request_policy.py decides, through its
+observation.py, and its assessments arbitrated by its arbitration.py, and three
+more gates check them: every observation built could be sent; none held the
+control loop up, an observation past the request timeout, or an arbiter or
+request policy call past one control step; and every arbiter and request policy
+answer stood, none granting more authority than the model proposed. An
 observation without every output-contract line can be sent, so it fails
 nothing; the first gate's detail counts them. A manifest's ``observation_models``
 names the models an assignment is marked on: every request is then built once more
 for each of them, with ``model_id`` naming it, so that a builder that prompts each
 model its own way is checked on every branch, though the drive itself answers
-from a recording.
+from a recording. When a drive has a request budget, from the base configuration
+or its scenario, one more gate checks that no drive attempted more requests than
+its budget.
 
 A manifest may also hold fault scenarios: routes driven under a schedule of
 injected camera, LiDAR, or model-provider faults. One more gate judges them, that
@@ -75,12 +78,14 @@ from metadrive_starter.submission import (
     ARBITRATION_SEAM,
     OBSERVATION_SEAM,
     PROJECT_ROOT,
+    REQUEST_POLICY_SEAM,
     SeamSpec,
     SubmissionError,
     apply_submission_overlay,
     load_arbitration_for,
     load_controller,
     load_observation_for,
+    load_request_policy_for,
 )
 from metadrive_starter.types import Action, ControlTick
 from metadrive_starter.vla import (
@@ -93,12 +98,18 @@ from metadrive_starter.vla import (
     ObservationBuilderFactory,
     ObservationError,
     ObservationRequest,
+    RequestPolicy,
+    RequestPolicyError,
+    RequestPolicyFactory,
+    RequestPolicySettings,
+    RequestTick,
     ReviewRequest,
     VLAAssessment,
     checked_observation,
     describe_missing_contract,
     missing_contract_lines,
     monotone_violations,
+    request_violation,
     review_violation,
 )
 
@@ -109,6 +120,7 @@ RUNS_FINISH = "no run stops on an error"
 VALID_OBSERVATIONS = "valid observations emitted"
 CONTROL_LOOP_UNBLOCKED = "control loop never blocked"
 MONOTONE_RESTRICTION = "monotone restriction preserved"
+REQUEST_BUDGET = "request budget respected"
 FAULTS_SURVIVED = "faults never break the run"
 TREE_UNCHANGED = "nothing outside submission/ was modified"
 RELEASE_MANIFEST = "release-manifest.json"
@@ -177,6 +189,8 @@ class GateScenario:
     # Overrides perception.safety_source; lidar_dropout acts only on "lidar".
     safety_source: str | None = None
     faults: tuple[FaultSpec, ...] = ()
+    # Overrides vla.maximum_requests_per_run, the drive's request budget.
+    request_budget: int | None = None
 
     @property
     def is_fault_scenario(self) -> bool:
@@ -210,6 +224,10 @@ class GateScenario:
             )
         if self.safety_source not in {None, "oracle", "lidar"}:
             raise ValueError("gate scenario safety_source must be 'oracle' or 'lidar'")
+        if self.request_budget is not None and (
+            not _non_negative_integer(self.request_budget) or self.request_budget == 0
+        ):
+            raise ValueError("gate scenario request_budget must be a positive integer")
         if not isinstance(self.faults, tuple) or any(
             not isinstance(fault, FaultSpec) for fault in self.faults
         ):
@@ -305,8 +323,8 @@ class ScenarioScore:
     speed_error_mps: float | None
     # Root mean square over the whole route.
     lateral_error_m: float | None
-    # Why the route earned no credit: it crashed, left the road, did not arrive,
-    # or its run stopped. None when it completed.
+    # Why the route earned no credit: it crashed, left the road or its route, did
+    # not arrive, or its run stopped. None when it completed.
     problem: str | None = None
 
 
@@ -381,6 +399,20 @@ class _ArbitrationLog:
     overrun: str | None = None
 
 
+@dataclass
+class _RequestPolicyLog:
+    """What a submitted request policy did during one drive."""
+
+    # should_request calls that returned, whatever they returned.
+    decided: int = 0
+    slowest_s: float = 0.0
+    # Why an answer could not stand, per call that raised or answered with
+    # neither True nor False.
+    problems: list[str] = field(default_factory=list)
+    # The first call that ran past the control step; later calls are refused.
+    overrun: str | None = None
+
+
 @dataclass(frozen=True)
 class _Drive:
     scenario: GateScenario
@@ -391,6 +423,9 @@ class _Drive:
     # None when the drive never asks the model.
     observations: _ObservationLog | None = None
     arbitrations: _ArbitrationLog | None = None
+    request_policies: _RequestPolicyLog | None = None
+    # The requests the drive could attempt; None when unbounded.
+    request_budget: int | None = None
 
 
 class _Recorder:
@@ -566,6 +601,66 @@ class _ArbitrationRecorder:
             log.slowest_s = max(log.slowest_s, time.perf_counter() - started_s)
 
 
+class RequestPolicyOverrun(RequestPolicyError):
+    """A submitted request policy ran past the control step, so the gates stopped
+    calling it."""
+
+
+class _RequestPolicyRecorder:
+    """Passes every call through to a submitted request policy, within one control
+    step, and logs what it answered. The runtime then checks the answer and holds
+    or offers the request exactly as it would without the recorder."""
+
+    def __init__(
+        self,
+        policy: RequestPolicy,
+        log: _RequestPolicyLog,
+        *,
+        budget_s: float,
+    ) -> None:
+        self._policy = policy
+        self._log = log
+        self._budget_s = budget_s
+
+    def begin_episode(self) -> None:
+        self._within("begin_episode()", self._policy.begin_episode)
+
+    def should_request(self, tick: RequestTick) -> bool:
+        log = self._log
+        try:
+            answer = self._within("should_request(tick)", self._policy.should_request, tick)
+        except RequestPolicyOverrun:
+            raise
+        except Exception as exc:
+            log.problems.append(
+                f"should_request(tick) raised {type(exc).__name__}: {exc}"
+            )
+            raise
+        log.decided += 1
+        violation = request_violation(answer)
+        if violation is not None:
+            log.problems.append(violation)
+        return answer
+
+    def _within(self, call: str, function: Callable[..., Any], *arguments: Any) -> Any:
+        log = self._log
+        if log.overrun is not None:
+            raise RequestPolicyOverrun(
+                "the request policy already ran past the control step, "
+                "so it is no longer called"
+            )
+        started_s = time.perf_counter()
+        try:
+            return _within(
+                self._budget_s, call, function, *arguments, limit="the control step"
+            )
+        except _Overrun as overrun:
+            log.overrun = str(overrun)
+            raise RequestPolicyOverrun(log.overrun) from None
+        finally:
+            log.slowest_s = max(log.slowest_s, time.perf_counter() - started_s)
+
+
 def _within(
     deadline_s: float,
     call: str,
@@ -633,6 +728,16 @@ def run_gates(
         if base_config.vla.enabled
         else ()
     )
+    # check_gate_plan refuses a scenario budget without the VLA subsystem.
+    budget_gates = (
+        (REQUEST_BUDGET,)
+        if base_config.vla.enabled
+        and (
+            base_config.vla.maximum_requests_per_run is not None
+            or any(scenario.request_budget is not None for scenario in plan.scenarios)
+        )
+        else ()
+    )
     fault_gates = (
         (FAULTS_SURVIVED,)
         if any(scenario.is_fault_scenario for scenario in plan.scenarios)
@@ -646,11 +751,18 @@ def run_gates(
         factory(config.controller)
         observation_factory = _load_observation(submission, config)
         arbitration_factory = _load_arbitration(submission, config)
+        request_policy_factory = _load_request_policy(submission, config)
     except SubmissionError as exc:
         results.append(GateResult(SUBMISSION_LOADS, GateStatus.FAILED, str(exc)))
         results.extend(
             GateResult(gate, GateStatus.NOT_RUN, "the submission did not load")
-            for gate in (BOUNDED_OUTPUTS, RUNS_FINISH, *model_gates, *fault_gates)
+            for gate in (
+                BOUNDED_OUTPUTS,
+                RUNS_FINISH,
+                *model_gates,
+                *budget_gates,
+                *fault_gates,
+            )
         )
     else:
         drives = [
@@ -660,6 +772,7 @@ def run_gates(
                 factory,
                 observation_factory,
                 arbitration_factory,
+                request_policy_factory,
                 observation_models=plan.observation_models,
             )
             for scenario in scenarios
@@ -678,6 +791,8 @@ def run_gates(
                 )
             )
             results.append(_monotone_restriction(drives))
+        if budget_gates:
+            results.append(_request_budget_respected(drives))
         if fault_gates:
             results.append(
                 _faults_survived(
@@ -718,13 +833,22 @@ def drive_route(
 
 
 def check_gate_plan(plan: GatePlan, base_config: AppConfig) -> None:
-    """Refuse a plan whose fault scenarios could not act under ``base_config``."""
-    if not base_config.vla.enabled and any(
-        scenario.is_fault_scenario for scenario in plan.scenarios
-    ):
+    """Refuse a plan whose fault scenarios or request budgets could not act under
+    ``base_config``."""
+    if base_config.vla.enabled:
+        return
+    needs_vla = [
+        what
+        for what, present in (
+            ("fault scenarios", any(s.is_fault_scenario for s in plan.scenarios)),
+            ("request budgets", any(s.request_budget is not None for s in plan.scenarios)),
+        )
+        if present
+    ]
+    if needs_vla:
         raise ValueError(
-            f"{plan.plan_id} has fault scenarios, which need a base configuration "
-            "that enables vla, for example --config configs/demo-vla-fixture.yaml"
+            f"{plan.plan_id} has {' and '.join(needs_vla)}, which need a base "
+            "configuration that enables vla, for example --config configs/demo-vla-fixture.yaml"
         )
 
 
@@ -785,6 +909,25 @@ def _load_arbitration(
     return factory
 
 
+def _load_request_policy(
+    submission: Path,
+    config: AppConfig,
+) -> RequestPolicyFactory | None:
+    """Load the submitted request policy, when the drives ask the model, and
+    build one now, within the request timeout, so a failing or hanging
+    constructor fails the load gate rather than every route."""
+    factory = load_request_policy_for(submission, config)
+    if factory is not None:
+        _build_once(
+            submission,
+            REQUEST_POLICY_SEAM,
+            factory,
+            RequestPolicySettings.from_vla(config.vla),
+            deadline_s=config.vla.request_timeout_s,
+        )
+    return factory
+
+
 def _build_once(
     submission: Path,
     spec: SeamSpec,
@@ -806,6 +949,7 @@ def _drive(
     factory: VehicleControllerFactory,
     observation_factory: ObservationBuilderFactory | None = None,
     arbitration_factory: AssessmentArbiterFactory | None = None,
+    request_policy_factory: RequestPolicyFactory | None = None,
     *,
     observation_models: tuple[str, ...] = (),
 ) -> _Drive:
@@ -823,6 +967,10 @@ def _drive(
     if scenario.safety_source is not None:
         run_config.perception.safety_source = scenario.safety_source
     run_config.faults = scenario.faults
+    if scenario.request_budget is not None:
+        run_config.vla = replace(
+            run_config.vla, maximum_requests_per_run=scenario.request_budget
+        )
     run_config.event_log = EventLogSettings()
     run_config.episode_recording = EpisodeRecordingSettings()
     recorders: list[_Recorder] = []
@@ -867,6 +1015,30 @@ def _drive(
             budget_s=control_timestep_s(run_config.simulator),
         )
 
+    request_policies = None if request_policy_factory is None else _RequestPolicyLog()
+
+    def recording_request_policy_factory(
+        settings: RequestPolicySettings,
+    ) -> RequestPolicy:
+        assert request_policy_factory is not None and request_policies is not None
+        try:
+            policy = _within(
+                deadline_s,
+                REQUEST_POLICY_SEAM.entry_call,
+                request_policy_factory,
+                settings,
+            )
+        except _Overrun as overrun:
+            request_policies.overrun = str(overrun)
+            raise RequestPolicyError(request_policies.overrun) from None
+        return _RequestPolicyRecorder(
+            policy,
+            request_policies,
+            budget_s=control_timestep_s(run_config.simulator),
+        )
+
+    summary: RunSummary | None = None
+    error: BaseException | None = None
     try:
         summary = run_simulation(
             run_config,
@@ -877,17 +1049,29 @@ def _drive(
             arbitration_factory=(
                 None if arbitration_factory is None else recording_arbitration_factory
             ),
+            request_policy_factory=(
+                None
+                if request_policy_factory is None
+                else recording_request_policy_factory
+            ),
         )
     except KeyboardInterrupt:
         raise
     except BaseException as exc:
         # Submitted code may raise anything or call sys.exit(); the route gate
         # reports it. Only an operator's interrupt stops the gate run.
-        return _Drive(
-            scenario, None, exc, _recorded_ticks(recorders), observations, arbitrations
-        )
+        error = exc
     return _Drive(
-        scenario, summary, None, _recorded_ticks(recorders), observations, arbitrations
+        scenario,
+        summary,
+        error,
+        _recorded_ticks(recorders),
+        observations,
+        arbitrations,
+        request_policies,
+        request_budget=(
+            run_config.vla.maximum_requests_per_run if run_config.vla.enabled else None
+        ),
     )
 
 
@@ -999,7 +1183,7 @@ def _control_loop_unblocked(
     overruns = [
         f"{drive.scenario.scenario_id}: {log.overrun}"
         for drive in drives
-        for log in (drive.observations, drive.arbitrations)
+        for log in (drive.observations, drive.arbitrations, drive.request_policies)
         if log is not None and log.overrun is not None
     ]
     if overruns:
@@ -1012,35 +1196,88 @@ def _control_loop_unblocked(
         (drive.arbitrations.slowest_s for drive in drives if drive.arbitrations),
         default=0.0,
     )
+    slowest_decision_s = max(
+        (drive.request_policies.slowest_s for drive in drives if drive.request_policies),
+        default=0.0,
+    )
     # Observations are built beside the control loop, which a slow one starves of
-    # model authority; arbitration runs on the loop itself.
+    # model authority; arbitration and the request policy run on the loop itself.
     return GateResult(
         CONTROL_LOOP_UNBLOCKED,
         GateStatus.PASSED,
         f"every observation was built within the {deadline_s:g} s request timeout, "
-        f"the slowest in {1000.0 * slowest_build_s:.1f} ms; every arbiter call "
-        f"returned on the control loop within the {budget_s:g} s control step, "
-        f"the slowest in {1000.0 * slowest_answer_s:.1f} ms",
+        f"the slowest in {1000.0 * slowest_build_s:.1f} ms; every arbiter and "
+        f"request policy call returned on the control loop within the {budget_s:g} s "
+        f"control step, the slowest arbiter call in {1000.0 * slowest_answer_s:.1f} ms "
+        f"and the slowest request policy call in {1000.0 * slowest_decision_s:.1f} ms",
     )
 
 
 def _monotone_restriction(drives: list[_Drive]) -> GateResult:
     problems = [
-        f"{drive.scenario.scenario_id}: "
-        f"{_count(len(log.problems), 'answer')} could not stand; the first: {log.problems[0]}"
+        f"{drive.scenario.scenario_id}: {_count(len(log.problems), noun)} could not "
+        f"stand; the first: {log.problems[0]}"
         for drive in drives
-        if (log := drive.arbitrations) is not None and log.problems
+        for log, noun in (
+            (drive.arbitrations, "arbiter answer"),
+            (drive.request_policies, "request policy answer"),
+        )
+        if log is not None and log.problems
     ]
     if problems:
         return GateResult(MONOTONE_RESTRICTION, GateStatus.FAILED, "; ".join(problems))
     logs = [drive.arbitrations for drive in drives if drive.arbitrations is not None]
     answered = sum(log.answered for log in logs)
     reviewed = sum(log.reviewed for log in logs)
+    decided = sum(
+        drive.request_policies.decided for drive in drives if drive.request_policies
+    )
     return GateResult(
         MONOTONE_RESTRICTION,
         GateStatus.PASSED,
         f"{_count(answered, 'assessment')} arbitrated and {_count(reviewed, 'tick')} "
-        "reviewed, none granting more authority than the model proposed",
+        "reviewed, none granting more authority than the model proposed; "
+        f"{_count(decided, 'request decision')} made, each True or False",
+    )
+
+
+def _request_budget_respected(drives: list[_Drive]) -> GateResult:
+    """Every drive with a budget attempted no more requests than it allows.
+
+    The budget is enforced below the request policy, so a submission cannot
+    exceed it; this checks the run's own request accounting all the same.
+    """
+    problems: list[str] = []
+    attempted = 0
+    budgeted = 0
+    exhausted = 0
+    for drive in drives:
+        budget = drive.request_budget
+        if budget is None or drive.summary is None:
+            # A drive that stopped is reported by the route or fault gate.
+            continue
+        metrics = drive.summary.vla_metrics
+        scenario = drive.scenario.scenario_id
+        if metrics.request_cap != budget or metrics.provider_requests_attempted is None:
+            problems.append(f"{scenario}: the run enforced no budget of {budget}")
+            continue
+        if metrics.provider_requests_attempted > budget:
+            problems.append(
+                f"{scenario}: {_count(metrics.provider_requests_attempted, 'request')} "
+                f"attempted against a budget of {budget}"
+            )
+            continue
+        budgeted += 1
+        attempted += metrics.provider_requests_attempted
+        exhausted += int(metrics.request_cap_exhausted)
+    if problems:
+        return GateResult(REQUEST_BUDGET, GateStatus.FAILED, "; ".join(problems))
+    return GateResult(
+        REQUEST_BUDGET,
+        GateStatus.PASSED,
+        f"{_count(attempted, 'model request')} attempted across "
+        f"{_count(budgeted, 'budgeted drive')}, each within its budget; "
+        f"{exhausted} used the whole of it",
     )
 
 
@@ -1068,7 +1305,7 @@ def _faults_survived(drives: list[_Drive]) -> GateResult:
     incidents = [incident for drive in drives if (incident := _fault_incident(drive))]
     if incidents:
         detail += (
-            f"; {_count(len(incidents), 'fault scenario')} crashed or left the road, "
+            f"; {_count(len(incidents), 'fault scenario')} crashed or left the road or its route, "
             "which fails no gate: " + "; ".join(incidents)
         )
     return GateResult(FAULTS_SURVIVED, GateStatus.PASSED, detail)
@@ -1082,6 +1319,8 @@ def _fault_incident(drive: _Drive) -> str | None:
         return f"{drive.scenario.scenario_id}: crashed"
     if summary.went_off_road:
         return f"{drive.scenario.scenario_id}: left the road"
+    if summary.left_route:
+        return f"{drive.scenario.scenario_id}: left its route"
     return None
 
 
@@ -1099,6 +1338,8 @@ def _route_failure(drive: _Drive) -> str | None:
         return "crashed"
     if summary.went_off_road:
         return "left the road"
+    if summary.left_route:
+        return "left its route"
     if not summary.arrived:
         return f"did not arrive within {drive.scenario.horizon} steps"
     return None
@@ -1301,6 +1542,7 @@ def _scenario(value: object) -> GateScenario:
             "stopped_vehicle_ahead_m",
             "safety_source",
             "faults",
+            "request_budget",
         },
         "gate scenario",
     )
@@ -1318,6 +1560,7 @@ def _scenario(value: object) -> GateScenario:
         stopped_vehicle_ahead_m=value.get("stopped_vehicle_ahead_m"),
         safety_source=value.get("safety_source"),
         faults=tuple(_fault(fault) for fault in faults),
+        request_budget=value.get("request_budget"),
     )
 
 

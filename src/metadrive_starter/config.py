@@ -573,6 +573,67 @@ class StoppedVehicleSettings:
             raise ValueError("scenario stopped vehicle kind must be 'car' or 'truck'")
 
 
+@dataclass(frozen=True)
+class MovingVehicleSettings:
+    """One car or truck placed along the ego route that keeps a set speed in its lane."""
+
+    vehicle_id: str
+    distance_m: float
+    speed_mps: float
+    lane_offset: int = 0
+    kind: str = "car"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.vehicle_id, str) or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]*",
+            self.vehicle_id,
+        ) is None:
+            raise ValueError(
+                "scenario moving vehicle_id must contain only letters, numbers, "
+                "'.', '_', or '-'"
+            )
+        if not _finite(self.distance_m) or self.distance_m <= 0.0:
+            raise ValueError("scenario moving vehicle distance_m must be finite and positive")
+        if not _positive_finite(self.speed_mps):
+            raise ValueError("scenario moving vehicle speed_mps must be finite and positive")
+        if isinstance(self.lane_offset, bool) or not isinstance(self.lane_offset, int):
+            raise ValueError("scenario moving vehicle lane_offset must be an integer")
+        if self.kind not in {"car", "truck"}:
+            raise ValueError("scenario moving vehicle kind must be 'car' or 'truck'")
+
+
+@dataclass
+class ScenarioObjectSettings:
+    """One static cone or barrier placed along the ego route, as a probe scene places it."""
+
+    object_id: str
+    distance_m: float
+    lane_offset: int = 0
+    # Offset from the lane centre, positive to the left.
+    lateral_m: float = 0.0
+    kind: str = "cone"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.object_id, str) or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]*",
+            self.object_id,
+        ) is None:
+            raise ValueError(
+                "scenario object_id must contain only letters, numbers, '.', '_', or '-'"
+            )
+        if not _finite(self.distance_m) or self.distance_m <= 0.0:
+            raise ValueError("scenario object distance_m must be finite and positive")
+        if isinstance(self.lane_offset, bool) or not isinstance(self.lane_offset, int):
+            raise ValueError("scenario object lane_offset must be an integer")
+        if not _finite(self.lateral_m):
+            raise ValueError("scenario object lateral_m must be finite")
+        if self.kind not in SCENARIO_OBJECT_KINDS:
+            raise ValueError("scenario object kind must be 'cone' or 'barrier'")
+
+
+SCENARIO_OBJECT_KINDS = ("cone", "barrier")
+
+
 @dataclass
 class ScenarioSettings:
     stopped_vehicle_ahead_m: float | None = None
@@ -585,10 +646,19 @@ class ScenarioSettings:
     vehicles: tuple[ScenarioVehicleSettings, ...] = ()
     # Static vehicles along the route, beyond the short road the ego starts on.
     stopped_vehicles: tuple[StoppedVehicleSettings, ...] = ()
+    # Vehicles placed the same way that drive on along the route at a set speed.
+    moving_vehicles: tuple[MovingVehicleSettings, ...] = ()
+    # Static cones and barriers along the route, placed the same way.
+    objects: tuple[ScenarioObjectSettings, ...] = ()
+    # Route distance from the ego's start at which the drive arrives and ends, short of
+    # the road's end; None arrives at MetaDrive's destination, the end of the map.
+    arrival_distance_m: float | None = None
 
     def __post_init__(self) -> None:
         if self.stopped_vehicle_ahead_m is not None and self.stopped_vehicle_ahead_m <= 0.0:
             raise ValueError("scenario.stopped_vehicle_ahead_m must be positive")
+        if self.arrival_distance_m is not None and not _positive_finite(self.arrival_distance_m):
+            raise ValueError("scenario.arrival_distance_m must be finite and positive")
         if not isinstance(self.traffic_light, TrafficLightScenarioSettings):
             raise ValueError("scenario.traffic_light must be traffic-light settings")
         if not isinstance(
@@ -612,11 +682,26 @@ class ScenarioSettings:
             raise ValueError(
                 "scenario.stopped_vehicles must be a tuple of stopped vehicle settings"
             )
+        if not isinstance(self.moving_vehicles, tuple) or any(
+            not isinstance(vehicle, MovingVehicleSettings)
+            for vehicle in self.moving_vehicles
+        ):
+            raise ValueError(
+                "scenario.moving_vehicles must be a tuple of moving vehicle settings"
+            )
+        if not isinstance(self.objects, tuple) or any(
+            not isinstance(item, ScenarioObjectSettings) for item in self.objects
+        ):
+            raise ValueError("scenario.objects must be a tuple of scenario object settings")
         vehicle_ids = [
-            vehicle.vehicle_id for vehicle in (*self.vehicles, *self.stopped_vehicles)
+            vehicle.vehicle_id
+            for vehicle in (*self.vehicles, *self.stopped_vehicles, *self.moving_vehicles)
         ]
         if len(set(vehicle_ids)) != len(vehicle_ids):
             raise ValueError("scenario vehicle ids must be unique")
+        object_ids = [item.object_id for item in self.objects]
+        if len(set(object_ids)) != len(object_ids):
+            raise ValueError("scenario object ids must be unique")
 
 
 @dataclass(frozen=True)
@@ -793,6 +878,16 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
         not isinstance(raw_vehicle, dict) for raw_vehicle in raw_stopped_vehicles
     ):
         raise ValueError("scenario.stopped_vehicles must be a list of mappings")
+    raw_moving_vehicles = scenario_data.pop("moving_vehicles", [])
+    if not isinstance(raw_moving_vehicles, list) or any(
+        not isinstance(raw_vehicle, dict) for raw_vehicle in raw_moving_vehicles
+    ):
+        raise ValueError("scenario.moving_vehicles must be a list of mappings")
+    raw_objects = scenario_data.pop("objects", [])
+    if not isinstance(raw_objects, list) or any(
+        not isinstance(raw_object, dict) for raw_object in raw_objects
+    ):
+        raise ValueError("scenario.objects must be a list of mappings")
     scenario = ScenarioSettings(
         **scenario_data,
         traffic_light=traffic_light,
@@ -801,6 +896,10 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
         stopped_vehicles=tuple(
             StoppedVehicleSettings(**raw_vehicle) for raw_vehicle in raw_stopped_vehicles
         ),
+        moving_vehicles=tuple(
+            MovingVehicleSettings(**raw_vehicle) for raw_vehicle in raw_moving_vehicles
+        ),
+        objects=tuple(ScenarioObjectSettings(**raw_object) for raw_object in raw_objects),
     )
     raw_faults = data.get("faults", [])
     if not isinstance(raw_faults, list):

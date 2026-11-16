@@ -1,6 +1,6 @@
 # Getting started
 
-[← DriveBench README](../README.md) · [Next: Assignment 2 brief →](../course/assignment-2/README.md)
+[← DriveBench README](../README.md) · [Next: Assignment 3 brief →](../course/assignment-3/README.md)
 
 The basics: get the code, install it, check that it runs, and know where your
 work goes, how to check it, and how to hand it in. For rendered
@@ -157,11 +157,11 @@ uv run metadrive-starter config --submission submission
 
 The structural gates check your submission the way grading does. Each
 assignment has its own gates, so run the `gates` command its brief gives; the
-bare command runs Assignment 1's, which never load an `observation.py` or an
-`arbitration.py`. For Assignment 2:
+bare command runs Assignment 1's, which never load an `observation.py`, an
+`arbitration.py`, or a `request_policy.py`. For Assignment 3:
 
 ```bash
-uv run metadrive-starter gates --manifest configs/gates-assignment-2.yaml --config configs/demo-vla-fixture.yaml
+uv run metadrive-starter gates --manifest configs/gates-assignment-3.yaml --config configs/demo-vla-fixture.yaml
 ```
 
 `gates` checks `submission/` unless you pass `--submission` with another
@@ -189,12 +189,12 @@ uv run python -m zipfile -c tmp/submission.zip submission
 Before uploading, check the zip: unpack it into a new folder, and run the
 assignment's gates on what came out by adding `--submission` with that folder
 to the `gates` command its brief gives. The report should match the one for
-`submission/`. For Assignment 2:
+`submission/`. For Assignment 3:
 
 ```bash
 check=$(mktemp -d tmp/zip-check-XXXXXX)
 uv run python -m zipfile -e tmp/submission.zip "$check"
-uv run metadrive-starter gates --manifest configs/gates-assignment-2.yaml --config configs/demo-vla-fixture.yaml --submission "$check/submission"
+uv run metadrive-starter gates --manifest configs/gates-assignment-3.yaml --config configs/demo-vla-fixture.yaml --submission "$check/submission"
 ```
 
 The first line makes a new, empty folder for every check, so files left from an
@@ -213,6 +213,7 @@ structural gates flag it before you hand in.
 
 Read the briefs, in order; each builds on the one before:
 [Assignment 1](../course/assignment-1/README.md), then
-[Assignment 2](../course/assignment-2/README.md). For demonstrations,
+[Assignment 2](../course/assignment-2/README.md), then
+[Assignment 3](../course/assignment-3/README.md). For demonstrations,
 Docker, platforms, and configuration, see
 [Running and configuring DriveBench](running-and-configuring.md).

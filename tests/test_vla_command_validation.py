@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from metadrive_starter.perception import LaneRelation, LocalScene, TrackedObject
@@ -42,6 +44,28 @@ def _object(
         width_m=1.8,
         lane_relation=lane_relation,
         in_path=in_path,
+    )
+
+
+def _ahead(
+    object_id: str = "truck",
+    *,
+    gap_m: float,
+    lateral_m: float = 0.0,
+    closing_mps: float = 0.0,
+) -> TrackedObject:
+    """A stopped-truck-sized object on the ego's path, ``gap_m`` bumper to bumper."""
+    return TrackedObject(
+        object_id=object_id,
+        kind="vehicle",
+        relative_position_m=(gap_m + (4.5 + 5.74) / 2.0, lateral_m),
+        relative_velocity_mps=(-closing_mps, 0.0),
+        length_m=5.74,
+        width_m=2.3,
+        lane_relation=LaneRelation.SAME,
+        in_path=True,
+        path_distance_m=gap_m + (4.5 + 5.74) / 2.0,
+        path_cross_track_m=lateral_m,
     )
 
 
@@ -327,6 +351,194 @@ def test_in_flight_clearance_includes_projected_path_hazard_without_lane_id() ->
     assert admission.clear is True
     assert in_flight.clear is False
     assert in_flight.object_id == "projected-hazard"
+
+
+def test_lane_change_stopped_behind_a_truck_is_declined_rather_than_started() -> None:
+    # Stopped 3 m behind a truck, the car can neither swing past it on the planner's
+    # route nor leave its lane: the validator used to accept this, and the running
+    # check to abort it a tick later (ADR-0009).
+    decision = VLACommandValidator().validate(
+        _command(HighLevelAction.CHANGE_LANE_LEFT),
+        _scene(_ahead(gap_m=3.0)),
+        now_s=10.0,
+    )
+
+    assert decision.disposition is CommandDisposition.REJECTED
+    assert decision.effective_command.action is HighLevelAction.KEEP_LANE
+    assert "truck violates lane-change gap" in decision.reasons[0]
+
+
+@pytest.mark.parametrize(
+    ("gap_m", "closing_mps", "clear"),
+    [
+        (11.9, 0.0, False),
+        (12.0, 0.0, True),
+        (12.0, 4.0, True),
+        (12.0, 4.5, False),  # 2.67 s
+        (16.0, 5.56, False),  # 2.88 s
+        (16.7, 5.56, True),
+        (28.0, 9.72, False),  # 2.88 s
+        (29.2, 9.72, True),
+    ],
+)
+def test_lane_change_zone_is_the_front_gap_and_the_time_to_collision(
+    gap_m: float,
+    closing_mps: float,
+    clear: bool,
+) -> None:
+    decision = VLACommandValidator().validate(
+        _command(HighLevelAction.CHANGE_LANE_RIGHT),
+        _scene(_ahead(gap_m=gap_m, closing_mps=closing_mps)),
+        now_s=10.0,
+    )
+
+    expected = CommandDisposition.ACCEPTED if clear else CommandDisposition.REJECTED
+    assert decision.disposition is expected
+
+
+@pytest.mark.parametrize(
+    "relation",
+    [LaneRelation.LEFT, LaneRelation.RIGHT],
+    ids=["left", "right"],
+)
+@pytest.mark.parametrize(
+    "tracked",
+    [
+        _ahead(gap_m=3.0),
+        _ahead(gap_m=11.0),
+        _ahead(gap_m=20.0),
+        _ahead(gap_m=11.0, lateral_m=2.3),
+        _ahead(gap_m=11.0, lateral_m=-2.3),
+        _object("left-front", longitudinal_m=8.0, lane_relation=LaneRelation.LEFT),
+        _object("right-rear", longitudinal_m=-6.0, lane_relation=LaneRelation.RIGHT),
+    ],
+    ids=["gap-3", "gap-11", "gap-20", "left-of-path", "right-of-path", "left-lane", "right-lane"],
+)
+def test_validation_and_the_running_check_give_one_answer(
+    relation: LaneRelation,
+    tracked: TrackedObject,
+) -> None:
+    validator = VLACommandValidator()
+    action = (
+        HighLevelAction.CHANGE_LANE_LEFT
+        if relation is LaneRelation.LEFT
+        else HighLevelAction.CHANGE_LANE_RIGHT
+    )
+
+    decision = validator.validate(_command(action), _scene(tracked), now_s=10.0)
+    running = validator.lane_change_clearance(
+        _scene(tracked),
+        relation,
+        now_s=10.0,
+        include_planned_path=True,
+    )
+
+    assert (decision.disposition is CommandDisposition.ACCEPTED) is running.clear
+
+
+@pytest.mark.parametrize(
+    ("lateral_m", "action", "disposition"),
+    [
+        # 2.3 m to the left clears the ego's width: moving right leaves it behind,
+        # moving left runs into it.
+        (2.3, HighLevelAction.CHANGE_LANE_RIGHT, CommandDisposition.ACCEPTED),
+        (2.3, HighLevelAction.CHANGE_LANE_LEFT, CommandDisposition.REJECTED),
+        (-2.3, HighLevelAction.CHANGE_LANE_LEFT, CommandDisposition.ACCEPTED),
+        (-2.3, HighLevelAction.CHANGE_LANE_RIGHT, CommandDisposition.REJECTED),
+        # Overlapping the ego's width it is on the path, whichever way it moves.
+        (1.5, HighLevelAction.CHANGE_LANE_RIGHT, CommandDisposition.REJECTED),
+    ],
+)
+def test_lane_change_may_start_away_from_an_object_it_does_not_overlap(
+    lateral_m: float,
+    action: HighLevelAction,
+    disposition: CommandDisposition,
+) -> None:
+    decision = VLACommandValidator().validate(
+        _command(action),
+        _scene(_ahead(gap_m=8.0, lateral_m=lateral_m)),
+        now_s=10.0,
+    )
+
+    assert decision.disposition is disposition
+
+
+def test_object_behind_in_the_lane_being_left_does_not_hold_a_lane_change() -> None:
+    behind = replace(
+        _ahead(gap_m=0.0),
+        relative_position_m=(-8.0, 0.0),
+        relative_velocity_mps=(3.0, 0.0),
+        path_distance_m=None,
+        path_cross_track_m=None,
+    )
+
+    decision = VLACommandValidator().validate(
+        _command(HighLevelAction.CHANGE_LANE_LEFT),
+        _scene(behind),
+        now_s=10.0,
+    )
+
+    assert decision.disposition is CommandDisposition.ACCEPTED
+
+
+@pytest.mark.parametrize(
+    ("longitudinal_m", "lane_relation"),
+    [(8.0, LaneRelation.LEFT), (0.0, LaneRelation.LEFT), (-6.0, LaneRelation.LEFT)],
+    ids=["ahead", "alongside", "behind"],
+)
+def test_nothing_left_behind_excuses_an_object_in_the_target_lane(
+    longitudinal_m: float,
+    lane_relation: LaneRelation,
+) -> None:
+    target = _object("target", longitudinal_m=longitudinal_m, lane_relation=lane_relation)
+
+    for running in (False, True):
+        clearance = VLACommandValidator().lane_change_clearance(
+            _scene(target),
+            LaneRelation.LEFT,
+            now_s=10.0,
+            include_planned_path=running,
+        )
+        assert clearance.clear is False
+        assert clearance.object_id == "target"
+
+
+def test_object_on_the_side_being_entered_stays_on_the_path_behind_the_ego() -> None:
+    # Measured without a lane, close enough to be in the corridor mid-manoeuvre.
+    entered = replace(
+        _ahead(gap_m=0.0),
+        relative_position_m=(-6.0, 2.2),
+        lane_relation=LaneRelation.UNKNOWN,
+        path_distance_m=None,
+        path_cross_track_m=None,
+    )
+
+    clearance = VLACommandValidator().lane_change_clearance(
+        _scene(entered),
+        LaneRelation.LEFT,
+        now_s=10.0,
+        include_planned_path=True,
+    )
+
+    assert clearance.clear is False
+
+
+def test_abeam_object_on_the_side_being_left_does_not_abort_a_running_change() -> None:
+    abeam = replace(
+        _ahead(gap_m=0.0),
+        relative_position_m=(2.0, -2.4),
+        path_distance_m=None,
+        path_cross_track_m=None,
+    )
+
+    clearance = VLACommandValidator().lane_change_clearance(
+        _scene(abeam),
+        LaneRelation.LEFT,
+        now_s=10.0,
+        include_planned_path=True,
+    )
+
+    assert clearance.clear is True
 
 
 @pytest.mark.parametrize(

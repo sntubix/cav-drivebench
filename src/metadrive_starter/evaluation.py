@@ -461,6 +461,7 @@ def _aggregate_vla_run_metrics(
             metrics.submissions_rate_limited for metrics in enabled
         ),
         "submissions_closed": sum(metrics.submissions_closed for metrics in enabled),
+        "submissions_held": sum(metrics.submissions_held for metrics in enabled),
         "responses_succeeded": sum(
             metrics.responses_succeeded for metrics in enabled
         ),

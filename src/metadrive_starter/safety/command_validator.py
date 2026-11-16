@@ -64,7 +64,7 @@ class CommandValidationDecision:
 
 @dataclass(frozen=True)
 class LaneChangeClearanceDecision:
-    """Deterministic target-lane clearance result used at admission and in flight."""
+    """Deterministic lane-change clearance, one rule at admission and in flight (ADR-0009)."""
 
     clear: bool
     lane_relation: LaneRelation
@@ -128,6 +128,7 @@ class VLACommandValidator:
                 scene,
                 LaneRelation.LEFT,
                 now_s=now_s,
+                include_planned_path=True,
             )
             if not clearance.clear:
                 return self._reject_lane_change(command, scene, clearance.reason)
@@ -136,6 +137,7 @@ class VLACommandValidator:
                 scene,
                 LaneRelation.RIGHT,
                 now_s=now_s,
+                include_planned_path=True,
             )
             if not clearance.clear:
                 return self._reject_lane_change(command, scene, clearance.reason)
@@ -222,7 +224,7 @@ class VLACommandValidator:
 
         for tracked in sorted(scene.objects, key=lambda item: item.object_id):
             if tracked.lane_relation is not relation and not (
-                include_planned_path and tracked.in_path
+                include_planned_path and _on_planned_path(scene, tracked, relation)
             ):
                 continue
             clearance = self._adjacent_object_clearance(scene, tracked, relation)
@@ -333,3 +335,28 @@ class VLACommandValidator:
             effective_command=effective,
             reasons=(reason,),
         )
+
+
+def _on_planned_path(
+    scene: LocalScene,
+    tracked: TrackedObject,
+    relation: LaneRelation,
+) -> bool:
+    """Whether a lane change towards ``relation`` meets ``tracked``, not leaves it behind."""
+    if not tracked.in_path:
+        return False
+    if relation is LaneRelation.SAME:
+        return True
+    wholly_ahead = tracked.relative_position_m[0] > (scene.ego_length_m + tracked.length_m) / 2.0
+    if wholly_ahead and tracked.path_cross_track_m is None:
+        return True
+    lateral_m = (
+        tracked.path_cross_track_m
+        if tracked.path_cross_track_m is not None
+        else tracked.relative_position_m[1]
+    )
+    towards_target_m = lateral_m if relation is LaneRelation.LEFT else -lateral_m
+    clear_of_ego_m = (scene.ego_width_m + tracked.width_m) / 2.0
+    if wholly_ahead:
+        return towards_target_m > -clear_of_ego_m
+    return towards_target_m >= clear_of_ego_m

@@ -36,6 +36,7 @@ from metadrive_starter.replay import replay_event_log
 from metadrive_starter.simulation import RunSummary, run_simulation
 from metadrive_starter.submission import (
     SubmissionError,
+    apply_reference_driving_overlay,
     apply_reference_overlay,
     apply_submission_overlay,
     load_arbitration_for,
@@ -43,6 +44,7 @@ from metadrive_starter.submission import (
     load_observation,
     load_observation_for,
     load_reference_controller,
+    load_request_policy_for,
 )
 from metadrive_starter.vla import ObservationBuilder, build_observation_builder
 from metadrive_starter.vla_probe import (
@@ -64,16 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="run a MetaDrive simulation")
     _add_common_options(run_parser)
     _add_submission_option(run_parser)
+    _add_reference_driving_option(run_parser)
     run_parser.add_argument("--dry-run", action="store_true", help="validate wiring without launching MetaDrive")
 
     smoke_parser = subparsers.add_parser("smoke", help="run a quick starter smoke check")
     _add_common_options(smoke_parser)
     _add_submission_option(smoke_parser)
+    _add_reference_driving_option(smoke_parser)
     smoke_parser.add_argument("--dry-run", action="store_true", default=True, help="skip launching MetaDrive")
 
     config_parser = subparsers.add_parser("config", help="print the effective configuration")
     _add_common_options(config_parser)
     _add_submission_option(config_parser)
+    _add_reference_driving_option(config_parser)
 
     probe_parser = subparsers.add_parser(
         "probe",
@@ -551,11 +556,15 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary.to_dict(), indent=2))
         return 0 if summary.successful else 1
 
+    if args.reference_driving and args.submission is None:
+        parser.error("--reference-driving needs --submission")
     try:
-        if args.submission is not None:
-            config = apply_submission_overlay(config, args.submission)
-        else:
+        if args.submission is None:
             config = apply_reference_overlay(config)
+        elif args.reference_driving:
+            config = apply_reference_driving_overlay(config, args.submission)
+        else:
+            config = apply_submission_overlay(config, args.submission)
         config = apply_overrides(
             config,
             headless=_headless_override(args),
@@ -578,7 +587,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(config.to_dict(), indent=2))
             return 0
         controller_factory = (
-            None if args.submission is None else load_controller(args.submission)
+            None
+            if args.submission is None
+            else load_reference_controller()
+            if args.reference_driving
+            else load_controller(args.submission)
         )
         observation_factory = (
             None
@@ -590,12 +603,18 @@ def main(argv: list[str] | None = None) -> int:
             if args.submission is None
             else load_arbitration_for(args.submission, config)
         )
+        request_policy_factory = (
+            None
+            if args.submission is None
+            else load_request_policy_for(args.submission, config)
+        )
         summary = run_simulation(
             config,
             dry_run=args.dry_run,
             controller_factory=controller_factory,
             observation_factory=observation_factory,
             arbitration_factory=arbitration_factory,
+            request_policy_factory=request_policy_factory,
         )
     except SubmissionError as exc:
         _report_submission_error(exc)
@@ -671,18 +690,32 @@ def _add_submission_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_reference_driving_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--reference-driving",
+        action="store_true",
+        help=(
+            "with --submission, drive with the instructor reference's controller and "
+            "tuning, keeping the submission's observation and arbitration, so that live "
+            "runs differ in those alone; a student release, which has no reference, stops"
+        ),
+    )
+
+
 def _prepare_runs(
     config: AppConfig,
     submission: Path | None,
 ) -> tuple[AppConfig, Callable[..., RunSummary]]:
     """Apply a submission's agent.yaml, and load the controller every run drives
-    and, when the model is asked, the observation builder and the arbiter.
+    and, when the model is asked, the observation builder, the arbiter, and the
+    request policy.
 
     Without a submission the instructor reference drives, as in ``run``. Either
     fails here, before any run starts or writes output.
     """
     observation_factory = None
     arbitration_factory = None
+    request_policy_factory = None
     if submission is None:
         factory = load_reference_controller()
         config = apply_reference_overlay(config)
@@ -691,11 +724,13 @@ def _prepare_runs(
         factory = load_controller(submission)
         observation_factory = load_observation_for(submission, config)
         arbitration_factory = load_arbitration_for(submission, config)
+        request_policy_factory = load_request_policy_for(submission, config)
     return config, partial(
         run_simulation,
         controller_factory=factory,
         observation_factory=observation_factory,
         arbitration_factory=arbitration_factory,
+        request_policy_factory=request_policy_factory,
     )
 
 

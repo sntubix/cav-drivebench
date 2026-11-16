@@ -16,7 +16,8 @@ control, and the instructor-owned safety floor remain outside model control.
 The important chain is:
 
 ```text
-camera + bounded scene context
+request policy: ask now?
+  → camera + bounded scene context
   → VLM assessment
   → arbitration
   → locally stamped command
@@ -141,6 +142,37 @@ and answers that could not stand in `arbitration_problems`. Each
 validator received. An `arbitration_review` event records each review that
 ended a command or could not stand.
 
+## Request policy
+
+A `RequestPolicy` decides when to ask the model. `VLACommandRuntime` calls
+`should_request(tick)` on the control loop every control tick, after any
+collected assessment has been arbitrated and reviewed, and before any camera
+frame is captured. False holds the request back: no frame is captured and
+nothing reaches the scheduler. True offers one, and the scheduler still refuses
+while a request is in flight, sooner than `vla.minimum_interval_s` after the
+last, and once the request budget is spent. A policy can therefore only make
+DriveBench ask less often, never more (ADR-0005).
+
+The `RequestTick` carries the time, the local scene measured now, the ego and
+cruise speeds, the assessment behind the command that holds authority after
+this tick's review and when it was asked for, the `ModelFailureCategory` of a
+request collected on this tick, whether a request is in flight, when the last
+was sent, the requests left in the budget, counting one in flight as spent, and
+`route_speed_cap_mps`, the planner's curve speed limit ahead from the previous
+tick's plan. The policy is built from `RequestPolicySettings`: the request
+budget, the minimum interval, the request timeout, and the action horizon. It is
+stateful, and `begin_episode()` runs with every episode reset. Each call must
+return within one control step, as the arbiter's do.
+
+A `should_request` that raises or returns anything but True or False holds that
+tick's request back; the run counts it in `vla_metrics.request_policy_problems`
+and logs a `request_policy_problem` event. Runs under `--submission` decide with
+`request_policy.py` in the submission. Everything else uses `DefaultRequestPolicy`,
+which answers True on every tick, so `vla.minimum_interval_s` alone paces the
+requests as it always has. The run summary counts held ticks in
+`vla_metrics.submissions_held` and times the slowest call in
+`request_policy_slowest_s`.
+
 ## Camera and model-input boundary
 
 Camera capture is opt-in so PID and manual demonstrations do not pay its rendering
@@ -217,7 +249,8 @@ with build_vla_scheduler(config.vla) as scheduler:
 
 The scheduler allows one in-flight request and never queues stale frames.
 Submission reports `started`, `busy`, `rate_limited`, `request_cap_exhausted`,
-or `closed`; polling returns one typed success or failure.
+or `closed`; polling returns one typed success or failure. A tick the request
+policy held back reports `held`, without offering a frame.
 
 Every request carries an episode ID and monotonically increasing generation ID.
 Starting a new episode clears model authority and changes the scheduler epoch.
@@ -278,6 +311,10 @@ faults do not. Episode changes do not reset it. When the cap is exhausted, the
 runtime stops capturing new model frames, emits one exhaustion event, lets
 existing authority expire, and continues with local fallback and safety. Run
 summaries record attempted and remaining requests.
+Every DriveBench run drives one episode, so the cap is also the per-episode request
+budget a request policy works within, and a gate scenario may set its own
+`request_budget`. Injected provider faults count against it; held ticks, which the
+policy declined, do not.
 
 ## What a live run is for
 
@@ -329,10 +366,20 @@ remains final authority in every mode.
 ## Lane-change authority
 
 Lateral actions fail closed unless the adjacent lane exists and passes configured
-front/rear gap and TTC checks. After admission, the lane-change coordinator
-continues checking clearance, route generation, progress, timeout, and completion.
-It may abort an admitted manoeuvre when conditions change. A model request never
-bypasses continuous local geometry checks.
+front/rear gap and TTC checks. One rule decides both whether a lane change starts
+and whether it keeps running. It judges objects in the target lane, and objects on
+the planned path that the manoeuvre does not leave behind, against
+`lane_change_front_gap_m` and `lane_change_rear_gap_m`, bumper to bumper, and
+`lane_change_minimum_ttc_s`. So ahead of a car closing on a stopped object the zone
+is the larger of 12 m and 3 s: 16.7 m at 5.56 m/s, 29.2 m at 9.72 m/s. Inside it the
+floor declines the request and the car keeps its lane: the planner's route cannot
+take a car around an object that close, and emergency braking would stop it if it
+tried. A car that has stopped inside the zone stays in its lane, so ask in time.
+
+After admission, the lane-change coordinator continues checking clearance, route
+generation, progress, timeout, and completion. It may abort an admitted manoeuvre
+when conditions change, or when an object reaching into the target lane comes
+inside its zone. A model request never bypasses continuous local geometry checks.
 
 ## Where to go next
 

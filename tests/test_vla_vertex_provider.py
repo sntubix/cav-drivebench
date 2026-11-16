@@ -236,3 +236,314 @@ def test_vertex_provider_reports_missing_optional_sdk() -> None:
 
     with pytest.raises(ModelProviderError, match="uv sync --extra cloud"):
         provider.generate(request(), timeout_s=5.0)
+
+
+class _Credentials:
+    def __init__(self, valid: bool) -> None:
+        self.valid = valid
+        self.refreshed = 0
+
+    def refresh(self, request: object) -> None:
+        self.refreshed += 1
+        self.valid = True
+
+
+def _fake_sdk(created: list[dict[str, object]], models: RecordingModels | None = None):
+    class FakeGenAI:
+        @staticmethod
+        def Client(**values: object) -> object:
+            created.append(values)
+            return SimpleNamespace(models=models or RecordingModels(command_text()))
+
+    return lambda: (FakeGenAI, FakeTypes)
+
+
+def test_prepare_builds_the_client_and_refreshes_expired_credentials_without_a_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from metadrive_starter.vla import vertex_provider
+
+    monkeypatch.setattr(vertex_provider, "_credentials_request", lambda: object())
+    created: list[dict[str, object]] = []
+    models = RecordingModels(command_text())
+    credentials = _Credentials(valid=False)
+    loads = 0
+
+    def load_credentials() -> _Credentials:
+        nonlocal loads
+        loads += 1
+        return credentials
+
+    provider = VertexModelProvider(
+        "project-123",
+        "global",
+        "course-model",
+        sdk_loader=_fake_sdk(created, models),
+        credentials_loader=load_credentials,
+    )
+
+    elapsed = provider.prepare(timeout_s=6.0)
+
+    assert elapsed >= 0.0
+    assert len(created) == 1
+    assert created[0]["credentials"] is credentials
+    assert created[0]["http_options"].timeout == 6000  # type: ignore[union-attr]
+    assert credentials.refreshed == 1
+    assert models.calls == []
+    # The request then reuses the prepared client and credentials.
+    provider.generate(request(), timeout_s=6.0)
+    assert len(created) == 1
+    assert loads == 1
+    assert len(models.calls) == 1
+
+
+def test_prepare_leaves_valid_credentials_alone_and_an_injected_client_untouched() -> None:
+    created: list[dict[str, object]] = []
+    credentials = _Credentials(valid=True)
+    provider = VertexModelProvider(
+        "project-123",
+        "global",
+        "course-model",
+        sdk_loader=_fake_sdk(created),
+        credentials_loader=lambda: credentials,
+    )
+    assert provider.prepare(timeout_s=6.0) >= 0.0
+    assert credentials.refreshed == 0
+
+    injected = VertexModelProvider(
+        "project-123",
+        "global",
+        "course-model",
+        client=SimpleNamespace(models=RecordingModels(command_text())),
+        types_module=FakeTypes,
+    )
+    assert injected.prepare(timeout_s=6.0) == 0.0
+
+
+def test_prepare_reports_a_client_it_cannot_build_as_a_provider_error() -> None:
+    def unavailable() -> tuple[object, object]:
+        raise ImportError("no google-genai")
+
+    provider = VertexModelProvider(
+        "project-123", "global", "course-model", sdk_loader=unavailable
+    )
+
+    with pytest.raises(ModelProviderError, match="cloud extra"):
+        provider.prepare(timeout_s=6.0)
+
+    def failing_credentials() -> object:
+        raise RuntimeError("no ADC")
+
+    created: list[dict[str, object]] = []
+    provider = VertexModelProvider(
+        "project-123",
+        "global",
+        "course-model",
+        sdk_loader=_fake_sdk(created),
+        credentials_loader=failing_credentials,
+    )
+    with pytest.raises(ModelProviderError, match="could not be prepared"):
+        provider.prepare(timeout_s=6.0)
+    with pytest.raises(ValueError, match="timeout_s"):
+        provider.prepare(timeout_s=0.0)
+
+
+# A demo student project: no refusal message may repeat it, its number, or the
+# troubleshooter id that encodes it.
+STUDENT_PROJECT = "student-demo-4821"
+STUDENT_PROJECT_NUMBER = "481516234200"
+ENCODED_PROJECT = "c3R1ZGVudC1kZW1vLTQ4MjE="
+
+
+class ClientError(Exception):
+    """Shaped as ``google.genai.errors.APIError``: ``code``, ``status``, ``details``."""
+
+    def __init__(self, code: int, response_json: dict[str, object]) -> None:
+        error = response_json.get("error", response_json)
+        assert isinstance(error, dict)
+        self.code = code
+        self.status = error.get("status")
+        self.message = error.get("message")
+        self.details = response_json
+        super().__init__(f"{code} {self.status}. {response_json}")
+
+
+def iam_refusal() -> ClientError:
+    resource = (
+        f"projects/{STUDENT_PROJECT}/locations/global/publishers/google/models/course-model"
+    )
+    return ClientError(
+        403,
+        {
+            "error": {
+                "code": 403,
+                "message": (
+                    "Permission 'aiplatform.endpoints.predict' denied on resource "
+                    f"'//aiplatform.googleapis.com/{resource}' (or it may not exist)."
+                ),
+                "status": "PERMISSION_DENIED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "IAM_PERMISSION_DENIED",
+                        "domain": "aiplatform.googleapis.com",
+                        "metadata": {
+                            "permission": "aiplatform.endpoints.predict",
+                            "resource": resource,
+                            "error_info_id": ENCODED_PROJECT,
+                        },
+                    },
+                    {
+                        "@type": "type.googleapis.com/google.rpc.Help",
+                        "links": [
+                            {
+                                "description": "Troubleshoot",
+                                "url": (
+                                    "https://console.cloud.google.com/iam-admin/"
+                                    f"troubleshooter;errorId={ENCODED_PROJECT}"
+                                ),
+                            }
+                        ],
+                    },
+                ],
+            }
+        },
+    )
+
+
+def service_disabled_refusal() -> ClientError:
+    return ClientError(
+        403,
+        {
+            "error": {
+                "code": 403,
+                "message": (
+                    f"Vertex AI API has not been used in project {STUDENT_PROJECT_NUMBER} "
+                    "before or it is disabled."
+                ),
+                "status": "PERMISSION_DENIED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "SERVICE_DISABLED",
+                        "domain": "googleapis.com",
+                        "metadata": {
+                            "service": "aiplatform.googleapis.com",
+                            "consumer": f"projects/{STUDENT_PROJECT_NUMBER}",
+                            "activationUrl": (
+                                "https://console.developers.google.com/apis/api/"
+                                "aiplatform.googleapis.com/overview?project="
+                                f"{STUDENT_PROJECT_NUMBER}"
+                            ),
+                        },
+                    }
+                ],
+            }
+        },
+    )
+
+
+def quota_refusal() -> ClientError:
+    return ClientError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "message": f"Resource exhausted in {STUDENT_PROJECT}. Try again later.",
+                "status": "RESOURCE_EXHAUSTED",
+            }
+        },
+    )
+
+
+def unwrapped_iam_refusal() -> ClientError:
+    """The SDK's replay path keeps ``details`` as the inner ``error`` object."""
+
+    wrapped = iam_refusal().details
+    assert isinstance(wrapped, dict)
+    return ClientError(403, wrapped["error"])
+
+
+def refusal_with_untrusted_fields() -> ClientError:
+    return ClientError(
+        403,
+        {
+            "error": {
+                "code": 403,
+                "status": f"denied for {STUDENT_PROJECT}",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": f"projects/{STUDENT_PROJECT}",
+                        "metadata": {"permission": f"{STUDENT_PROJECT} predict"},
+                    }
+                ],
+            }
+        },
+    )
+
+
+REFUSALS = [
+    pytest.param(
+        iam_refusal,
+        "403 PERMISSION_DENIED, IAM_PERMISSION_DENIED, permission aiplatform.endpoints.predict",
+        ModelFailureCategory.AUTHENTICATION,
+        id="missing-iam-grant",
+    ),
+    pytest.param(
+        service_disabled_refusal,
+        "403 PERMISSION_DENIED, SERVICE_DISABLED",
+        ModelFailureCategory.AUTHENTICATION,
+        id="api-disabled",
+    ),
+    pytest.param(
+        quota_refusal,
+        "429 RESOURCE_EXHAUSTED",
+        ModelFailureCategory.QUOTA,
+        id="quota",
+    ),
+    pytest.param(
+        unwrapped_iam_refusal,
+        "403 PERMISSION_DENIED, IAM_PERMISSION_DENIED, permission aiplatform.endpoints.predict",
+        ModelFailureCategory.AUTHENTICATION,
+        id="details-without-error-wrapper",
+    ),
+    pytest.param(
+        refusal_with_untrusted_fields,
+        "403",
+        ModelFailureCategory.AUTHENTICATION,
+        id="fields-that-are-not-tokens-are-dropped",
+    ),
+    pytest.param(
+        lambda: RuntimeError(f"connection reset talking to {STUDENT_PROJECT}"),
+        "RuntimeError",
+        ModelFailureCategory.TRANSPORT,
+        id="not-an-api-error",
+    ),
+]
+
+
+@pytest.mark.parametrize(("make_error", "reason", "category"), REFUSALS)
+def test_vertex_provider_says_why_vertex_refused_without_naming_the_project(
+    make_error: object,
+    reason: str,
+    category: ModelFailureCategory,
+) -> None:
+    error = make_error()  # type: ignore[operator]
+    provider = VertexModelProvider(
+        STUDENT_PROJECT,
+        "global",
+        "course-model",
+        client=SimpleNamespace(models=RecordingModels(error=error)),
+        types_module=FakeTypes,
+    )
+
+    with pytest.raises(ModelProviderError) as raised:
+        provider.generate(request(), timeout_s=5.0)
+
+    message = str(raised.value)
+    assert message == f"Vertex model request failed ({reason})"
+    assert raised.value.category is category
+    assert raised.value.__cause__ is error
+    for secret in (STUDENT_PROJECT, STUDENT_PROJECT_NUMBER, ENCODED_PROJECT):
+        assert secret not in message

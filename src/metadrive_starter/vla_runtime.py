@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from metadrive_starter.config import VLASettings
 from metadrive_starter.faults import FaultInjectingModelProvider
 from metadrive_starter.vla import (
     HTTPTransport,
     ModelProvider,
+    ModelProviderError,
     ObservationBuilder,
     OpenAICompatibleHTTPProvider,
     RecordedModelProvider,
@@ -17,6 +19,9 @@ from metadrive_starter.vla import (
     VLAInferenceScheduler,
     VertexModelProvider,
 )
+from metadrive_starter.vla.vertex_provider import load_application_default_credentials
+
+_LOG = logging.getLogger(__name__)
 
 
 def build_vla_scheduler(
@@ -28,11 +33,14 @@ def build_vla_scheduler(
     vertex_types_module: object | None = None,
     inject_faults: bool = False,
     observation_builder: ObservationBuilder | None = None,
+    around_provider: Callable[[ModelProvider], ModelProvider] | None = None,
 ) -> VLAInferenceScheduler:
     """Compose the selected model provider, inference pipeline, and scheduler.
 
     Without an observation builder the pipeline builds DriveBench's original
-    observation.
+    observation. ``around_provider`` wraps the selected provider before faults
+    and the request cap are applied around it, for a tool that stands where the
+    model would, as the request timing drive's answer delay does.
     """
     provider = build_vla_provider(
         settings,
@@ -41,15 +49,39 @@ def build_vla_scheduler(
         vertex_client=vertex_client,
         vertex_types_module=vertex_types_module,
     )
-    provider, request_budget = apply_vla_request_cap(settings, provider)
+    prepare_provider(provider, timeout_s=settings.request_timeout_s)
+    if around_provider is not None:
+        provider = around_provider(provider)
+    # Faults are injected inside the request cap, so an injected failure costs a
+    # request as a real one does.
     if inject_faults:
         provider = FaultInjectingModelProvider(provider)
+    provider, request_budget = apply_vla_request_cap(settings, provider)
     return _build_scheduler(
         settings,
         provider,
         request_budget=request_budget,
         observation_builder=observation_builder,
     )
+
+
+def prepare_provider(provider: ModelProvider, *, timeout_s: float) -> float | None:
+    """Warm a provider that can be warmed, before the control loop starts.
+
+    A Vertex provider builds its client and refreshes its token here, so the
+    drive's first answer is not the one that pays for them. Sends no request.
+    Returns the seconds the warm-up took, or None when the provider has none.
+    A warm-up that fails is logged and left to the first request to report in
+    its own failure category.
+    """
+    prepare = getattr(provider, "prepare", None)
+    if not callable(prepare):
+        return None
+    try:
+        return float(prepare(timeout_s=timeout_s))
+    except ModelProviderError as exc:
+        _LOG.warning("model provider warm-up failed: %s", exc)
+        return None
 
 
 def build_vla_provider(
@@ -196,6 +228,7 @@ def build_vertex_vla_provider(
         thinking_budget=settings.vertex.thinking_budget,
         client=client,
         types_module=types_module,
+        credentials_loader=None if client is not None else load_application_default_credentials,
     )
 
 

@@ -9,11 +9,13 @@ from metadrive_starter.faults import (
     FaultSpec,
 )
 from metadrive_starter.vla import (
+    ModelFailureCategory,
     ModelProviderError,
     ModelRequest,
     ModelTimeoutError,
     RGBFrame,
     ScriptedModelProvider,
+    model_failure_category,
 )
 
 
@@ -58,24 +60,32 @@ def test_fault_schedule_rejects_duplicate_ids_and_non_monotonic_steps() -> None:
 
 
 @pytest.mark.parametrize(
-    ("kind", "error_type"),
+    ("kind", "error_type", "category"),
     [
-        (FaultKind.PROVIDER_TIMEOUT, ModelTimeoutError),
-        (FaultKind.PROVIDER_ERROR, ModelProviderError),
+        (FaultKind.PROVIDER_TIMEOUT, ModelTimeoutError, ModelFailureCategory.TIMEOUT),
+        (FaultKind.PROVIDER_ERROR, ModelProviderError, ModelFailureCategory.TRANSPORT),
+        (FaultKind.PROVIDER_QUOTA, ModelProviderError, ModelFailureCategory.QUOTA),
+        (
+            FaultKind.PROVIDER_OUTAGE,
+            ModelProviderError,
+            ModelFailureCategory.MODEL_UNAVAILABLE,
+        ),
     ],
 )
 def test_provider_adapter_injects_failures_for_registered_request_only(
     kind: FaultKind,
     error_type: type[Exception],
+    category: ModelFailureCategory,
 ) -> None:
     provider = ScriptedModelProvider(("good",))
     adapter = FaultInjectingModelProvider(provider)
     request = _request()
     adapter.register(request.request_id, (FaultSpec("provider-1", kind, 0, 1),))
 
-    with pytest.raises(error_type, match="injected"):
+    with pytest.raises(error_type, match="injected") as raised:
         adapter.generate(request, timeout_s=1.0)
 
+    assert model_failure_category(raised.value) is category
     response = adapter.generate(request, timeout_s=1.0)
     assert response.text == "good"
 

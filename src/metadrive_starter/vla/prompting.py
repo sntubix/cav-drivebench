@@ -24,6 +24,16 @@ class PromptBuildError(ValueError):
     """Raised when a safe, bounded VLA prompt cannot be constructed."""
 
 
+# How far past the ego's front bumper an object in a lane beside it bears on a lane
+# change started now, in metres, bumper to bumper: the planner's 18 m transition and
+# the safety floor's 3 s at the default cruise speed of 9.72 m/s.
+SIDE_LANE_AHEAD_M = 47.0
+
+# How far sideways of the ego the lane beside it reaches, in metres: one and a half of
+# MetaDrive's 3.5 m lanes, from a car that keeps to its lane's centre. An object without a
+# lane relation lies in the lane beside only if part of it is this close.
+SIDE_LANE_REACH_M = 5.25
+
 def build_vla_prompt(
     *,
     now_s: float,
@@ -311,16 +321,43 @@ def _lane_context(scene: LocalScene, *, side: LaneRelation) -> dict[str, object]
     elif not available:
         observed_clear = False
     else:
-        side_name = side.value
         observed_clear = not any(
-            _tactical_relative_location(tracked) in {
-                side_name,
-                f"front_{side_name}",
-                f"rear_{side_name}",
-            }
+            _in_side_lane(tracked, side) and _bears_on_lane_change(scene, tracked)
             for tracked in scene.objects
         )
     return {"available": available, "observed_clear": observed_clear}
+
+
+def _in_side_lane(tracked: TrackedObject, side: LaneRelation) -> bool:
+    """Whether an object lies in the lane directly beside the ego on ``side``.
+
+    A measured lane relation says so. An object without one, such as a cone, a
+    vehicle on another road block, or a vehicle further over than the lane beside,
+    lies in it when it is on that side and part of it is within ``SIDE_LANE_REACH_M``
+    sideways of the ego.
+    """
+    side_name = side.value
+    if _tactical_relative_location(tracked) not in {
+        side_name,
+        f"front_{side_name}",
+        f"rear_{side_name}",
+    }:
+        return False
+    if tracked.lane_relation is side:
+        return True
+    return abs(tracked.relative_position_m[1]) - tracked.width_m / 2.0 <= SIDE_LANE_REACH_M
+
+
+def _bears_on_lane_change(scene: LocalScene, tracked: TrackedObject) -> bool:
+    """Whether an object beside the ego lane can meet a lane change started now.
+
+    It can from level with the ego's rear bumper to ``SIDE_LANE_AHEAD_M`` past its
+    front bumper, bumper to bumper. The car it has just passed no longer occupies
+    the lane. Whether a lane change may start is the safety floor's to judge,
+    behind the ego too; this says only what the lane holds.
+    """
+    half_lengths_m = (scene.ego_length_m + tracked.length_m) / 2.0
+    return -half_lengths_m < tracked.relative_position_m[0] <= half_lengths_m + SIDE_LANE_AHEAD_M
 
 
 def _tactical_relative_location(tracked: TrackedObject) -> str:

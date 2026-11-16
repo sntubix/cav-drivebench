@@ -378,7 +378,13 @@ Create an ignored `.env` using the project identifier supplied by the instructor
 GOOGLE_CLOUD_PROJECT=the-instructor-provided-project
 ```
 
-Load it and authenticate with the provided account:
+Signing in needs Google's command-line tool, `gcloud`, which the cloud extra
+does not install: follow
+[Install the gcloud CLI](https://cloud.google.com/sdk/docs/install) for your
+system, and check it with `gcloud --version`. Work natively, with `uv`: the
+Docker image carries neither the cloud extra nor your credentials.
+
+Load `.env` and authenticate with the provided account:
 
 ```bash
 set -a
@@ -386,6 +392,34 @@ source .env
 set +a
 gcloud auth application-default login
 ```
+
+Your account needs permission to send Gemini requests on that project
+(`aiplatform.endpoints.predict`); the instructors grant it. If `cloud-check` fails at
+`text_round_trip`, ask them to check that grant before anything else.
+
+`gcloud auth application-default login` may warn that it cannot add the project as a
+quota project. That is expected: your account does not need that permission, and the
+warning changes nothing. Do not run `set-quota-project`.
+
+**Usage and the spending cap.** A drive and `cloud-check` send requests to Vertex,
+and each one may be billed to your team's project; the gates use recorded answers and
+send none. In the course's own drives in November 2026 an answered request cost about
+EUR 0.0009, so 1,000 cost about EUR 0.90. Your account is set up to send requests, not
+to read the project's bill, so estimate from your own count: each run's summary prints
+`provider_requests_attempted` under `vla_metrics`, and `cloud-check --samples 3` makes
+four. That figure counts attempts, each before it is sent, so it is an upper estimate
+of what was billed and never the bill itself. An attempt that an injected fault
+refuses, as in two of the practice scenes, is counted and not billed, and so is one
+that Google refuses outright, for a missing permission or a quota, since it produces
+no answer to bill. Whether a request that timed out was billed cannot be told from the
+count.
+
+The instructors put a spending cap on each team's project and tell you its amount.
+Once the project's spending reaches it, its requests are refused until the instructors
+lift or raise the cap. If every request of a run fails where earlier runs were
+answered, or `cloud-check` fails at `text_round_trip` after having passed, stop
+driving and ask the instructors: a run that goes on only spends its request budget on
+failures. They can adjust the cap on request.
 
 Check credentials, project resolution, text/image requests, strict schema, and
 latency before a driving run:

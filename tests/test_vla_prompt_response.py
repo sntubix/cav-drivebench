@@ -19,7 +19,11 @@ from metadrive_starter.vla import (
     RiskLevel,
     VLA_PROMPT_CONTRACT_VERSION,
 )
-from metadrive_starter.vla.prompting import PromptBuildError, build_vla_prompt
+from metadrive_starter.vla.prompting import (
+    PromptBuildError,
+    build_vla_prompt,
+    build_vla_scene_context,
+)
 from metadrive_starter.vla.response import (
     VLAAssessmentPayloadError,
     VLACommandPayloadError,
@@ -217,6 +221,40 @@ def test_prompt_normalizes_crossing_and_unknown_objects_into_tactical_locations(
     ]
     assert context["lanes"]["left"]["observed_clear"] is True
     assert context["lanes"]["right"]["observed_clear"] is False
+
+
+@pytest.mark.parametrize(
+    ("longitudinal_m", "observed_clear"),
+    [
+        (-15.0, True),  # passed: behind the ego's rear bumper
+        (-4.6, True),  # just clear of it, 4.5 m long
+        (-4.4, False),  # its nose level with the ego's tail
+        (0.0, False),  # alongside
+        (20.0, False),
+        (51.5, False),  # 47 m past the ego's front bumper
+        (51.6, True),
+    ],
+)
+def test_lane_clearance_counts_what_a_lane_change_could_meet(
+    longitudinal_m: float,
+    observed_clear: bool,
+) -> None:
+    beside = TrackedObject(
+        object_id="beside",
+        kind="vehicle",
+        relative_position_m=(longitudinal_m, 3.5),
+        relative_velocity_mps=(0.0, 0.0),
+        length_m=4.5,
+        width_m=1.8,
+        lane_relation=LaneRelation.UNKNOWN,
+        in_path=False,
+    )
+    scene = replace(_scene(), objects=(beside,), left_lane_available=True)
+
+    context = build_vla_scene_context(scene, max_scene_objects=1)
+
+    assert context["lanes"]["left"]["observed_clear"] is observed_clear
+    assert [item["id"] for item in context["objects"]] == ["beside"]
 
 
 @pytest.mark.parametrize(

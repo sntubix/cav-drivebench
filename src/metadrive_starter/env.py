@@ -21,6 +21,15 @@ class MetaDriveUnavailable(RuntimeError):
     """Raised when MetaDrive is not installed or cannot be imported."""
 
 
+class EgoLeftRoute(RuntimeError):
+    """Raised when the ego's lane is not on the navigation route it was given.
+
+    A car that turns far enough, for example one that pivots or spins, is placed
+    by MetaDrive on a lane its route does not use, often the opposite carriageway,
+    and no route ahead of it can be sampled from there.
+    """
+
+
 def make_env(
     settings: SimulatorSettings,
     camera: CameraSettings | None = None,
@@ -67,6 +76,20 @@ def ego_state_info(env: Any, info: dict[str, object] | None = None) -> dict[str,
     return enriched
 
 
+def hold_ego_at_standstill(env: Any) -> None:
+    """Stop the ego's chassis dead, as a brake holds a car at a standstill.
+
+    MetaDrive's brake cannot hold a stopped car. Bullet's raycast vehicle brakes
+    with a capped friction impulse at each wheel and has no static friction, so at
+    a standstill the impulse overshoots on the suspension and the car limit-cycles:
+    under full brake it creeps backwards at up to about 0.23 m/s, and with its wheels
+    turned it pivots where it stands. Zeroed before each step, it stays put.
+    """
+    ego = env.agent
+    ego.set_velocity([0.0, 0.0])
+    ego.set_angular_velocity(0.0)
+
+
 def navigation_waypoints(env: Any, spacing_m: float) -> list[Point2D]:
     """Sample the route selected by MetaDrive navigation into world-space waypoints."""
     if spacing_m <= 0:
@@ -84,7 +107,7 @@ def navigation_waypoints(env: Any, spacing_m: float) -> list[Point2D]:
         None,
     )
     if start_index is None:
-        raise RuntimeError("ego lane is not part of the selected navigation route")
+        raise EgoLeftRoute("ego lane is not part of the selected navigation route")
 
     for route_index, (start, end) in enumerate(
         route_pairs[start_index:],
@@ -400,6 +423,105 @@ def spawn_static_vehicle_ahead(
     return obstacle
 
 
+def spawn_moving_vehicle_ahead(
+    env: Any,
+    distance_m: float,
+    speed_mps: float,
+    *,
+    lane_offset: int = 0,
+    vehicle_kind: str = "car",
+    name: str = "scenario-moving-vehicle",
+) -> Any:
+    """Spawn a car or truck on the ego route that keeps ``speed_mps`` in its lane.
+
+    It is placed as a static vehicle is, starts at its speed, and drives on along
+    the rest of the ego route: MetaDrive's IDM steers it and holds its speed, and
+    brakes it for anything stopped ahead.
+    """
+    if distance_m <= 0.0:
+        raise ValueError("distance_m must be positive")
+    if not math.isfinite(speed_mps) or speed_mps <= 0.0:
+        raise ValueError("speed_mps must be finite and positive")
+    if isinstance(lane_offset, bool) or not isinstance(lane_offset, int):
+        raise ValueError("lane_offset must be an integer")
+    if vehicle_kind not in {"car", "truck"}:
+        raise ValueError("vehicle_kind must be 'car' or 'truck'")
+    if not isinstance(name, str) or not name:
+        raise ValueError("name must not be empty")
+
+    from metadrive.component.vehicle.vehicle_type import TrafficDefaultVehicle, XLVehicle
+
+    from metadrive_starter.scenario_traffic import drive_at_set_speed
+
+    vehicle_type = TrafficDefaultVehicle if vehicle_kind == "car" else XLVehicle
+    lane, longitudinal = _route_position_ahead(env, distance_m, lane_offset=lane_offset)
+    ego_route = list(env.agent.navigation.checkpoints)
+    spawn_kwargs = {
+        "force_spawn": True,
+        "name": name,
+        "vehicle_config": {
+            "spawn_lane_index": lane.index,
+            "spawn_longitude": float(longitudinal),
+            "spawn_lateral": 0.0,
+            "spawn_velocity": [float(speed_mps), 0.0],
+            "spawn_velocity_car_frame": True,
+            "enable_reverse": False,
+            "destination": ego_route[-1],
+        },
+    }
+    vehicle = _spawn_scenario_object(env, vehicle_type, spawn_kwargs)
+    # MetaDrive spawns a vehicle at half its box height, and a truck that lands from
+    # there loses most of its speed. From wheels-down it settles a few centimetres.
+    vehicle.set_position(vehicle.position, height=_wheels_down_origin_height_m(vehicle))
+    _record_post_reset_scenario_object(env, vehicle, vehicle_type, spawn_kwargs)
+    route = list(vehicle.navigation.checkpoints)
+    if ego_route[-len(route):] != route:
+        raise RuntimeError(
+            f"moving vehicle {name!r} would leave the ego route: "
+            f"{route} is not the end of {ego_route}"
+        )
+    drive_at_set_speed(env.engine, vehicle, float(speed_mps))
+    return vehicle
+
+
+def spawn_static_object_ahead(
+    env: Any,
+    distance_m: float,
+    *,
+    lane_offset: int = 0,
+    lateral_m: float = 0.0,
+    kind: str = "cone",
+    name: str = "scenario-object",
+) -> Any:
+    """Spawn a static cone or barrier relative to the ego route, as a probe scene places it."""
+    if distance_m <= 0.0:
+        raise ValueError("distance_m must be positive")
+    if isinstance(lane_offset, bool) or not isinstance(lane_offset, int):
+        raise ValueError("lane_offset must be an integer")
+    if not math.isfinite(lateral_m):
+        raise ValueError("lateral_m must be finite")
+    if kind not in {"cone", "barrier"}:
+        raise ValueError("kind must be 'cone' or 'barrier'")
+    if not isinstance(name, str) or not name:
+        raise ValueError("name must not be empty")
+
+    from metadrive.component.static_object.traffic_object import TrafficBarrier, TrafficCone
+
+    object_class = TrafficCone if kind == "cone" else TrafficBarrier
+    lane, longitudinal = _route_position_ahead(env, distance_m, lane_offset=lane_offset)
+    position = lane.position(longitudinal, float(lateral_m))
+    spawn_kwargs = {
+        "position": position,
+        "heading_theta": float(lane.heading_theta_at(longitudinal)),
+        "lane": lane,
+        "static": True,
+        "name": name,
+    }
+    obstacle = _spawn_scenario_object(env, object_class, spawn_kwargs)
+    _record_post_reset_scenario_object(env, obstacle, object_class, spawn_kwargs)
+    return obstacle
+
+
 # Keeps a static vehicle's wheel rays off the road: a ray that touches it pushes on
 # the static body and gives it a velocity the measured scene would report.
 _STATIC_WHEEL_CLEARANCE_M = 0.01
@@ -532,7 +654,7 @@ def _route_position_ahead(
         None,
     )
     if start_index is None:
-        raise RuntimeError("ego lane is not part of the selected navigation route")
+        raise EgoLeftRoute("ego lane is not part of the selected navigation route")
 
     remaining = distance_m
     for route_index, (start, end) in enumerate(route_pairs[start_index:], start=start_index):

@@ -1,5 +1,6 @@
 import json
 import re
+import time
 import warnings
 from dataclasses import replace
 from pathlib import Path
@@ -9,12 +10,15 @@ import matplotlib.pyplot as plt
 import pytest
 
 from metadrive_starter.cli import main
+from metadrive_starter.config import EventLogSettings, load_config
+from metadrive_starter.faults import FaultKind, FaultSpec
 from metadrive_starter.gates import (
     CONTROL_LOOP_UNBLOCKED,
     MONOTONE_RESTRICTION,
     VALID_OBSERVATIONS,
 )
 from metadrive_starter.recorded_probes import INTERPRETATION_CATALOG, load_recorded_probes
+from metadrive_starter.simulation import run_simulation
 from metadrive_starter.vla import declined
 
 
@@ -27,6 +31,7 @@ COURSE_NOTEBOOKS = sorted(
 PID_LAB = PROJECT_ROOT / "course" / "assignment-1" / "pid-lab.ipynb"
 OBSERVATION_INSPECTOR = PROJECT_ROOT / "course" / "assignment-2" / "observation-inspector.ipynb"
 PROBE_ANALYSIS = PROJECT_ROOT / "course" / "assignment-2" / "probe-analysis.ipynb"
+REQUEST_TIMING = PROJECT_ROOT / "course" / "assignment-3" / "request-timing.ipynb"
 # A student release ships Assignment 2, and the recorded probes its notebooks
 # read, only once Assignment 2 is released.
 ASSIGNMENT_2 = pytest.mark.needs("course/assignment-2", "fixtures")
@@ -62,6 +67,8 @@ def test_course_ships_its_notebooks() -> None:
     assert PID_LAB in COURSE_NOTEBOOKS
     if OBSERVATION_INSPECTOR.parent.is_dir():
         assert {OBSERVATION_INSPECTOR, PROBE_ANALYSIS} <= set(COURSE_NOTEBOOKS)
+    if REQUEST_TIMING.parent.is_dir():
+        assert REQUEST_TIMING in COURSE_NOTEBOOKS
 
 
 # The tests marked instructor in this file pin what the release ships:
@@ -460,3 +467,184 @@ def test_probe_analysis_never_pools_runs_that_differ(capsys) -> None:
         [stopped, stopped],
         [occluded],
     ]
+
+
+# Assignment 3: the request timing notebook.
+
+
+class _Standstill:
+    """A controller that neither steers nor drives: the event log is what is tested."""
+
+    def update(self, tick) -> tuple[float, float]:
+        return (0.0, 0.0)
+
+    def reset_speed_control(self) -> None:
+        pass
+
+
+class _Every:
+    """A request policy that asks once every ``period_s``, whatever the road does."""
+
+    def __init__(self, period_s: float) -> None:
+        self.period_s = period_s
+
+    def begin_episode(self) -> None:
+        pass
+
+    def should_request(self, tick) -> bool:
+        return tick.last_requested_at_s is None or tick.now_s - tick.last_requested_at_s >= self.period_s - 1e-9
+
+
+@pytest.mark.instructor
+def test_request_timing_ends_each_task_with_its_check() -> None:
+    stub = (PROJECT_ROOT / "submission" / "request_policy.py").read_text()
+    todos = [
+        " ".join(todo.split())
+        for todo in re.findall(r"`# TODO: ([^`]+)`", _markdown(REQUEST_TIMING))
+    ]
+    task_cells = [
+        "".join(cell["source"]).splitlines()[-1]
+        for cell in _code_cells(REQUEST_TIMING)
+        if re.fullmatch(r"check\(\d\)", "".join(cell["source"]).splitlines()[-1])
+    ]
+
+    # Each task names TODO lines the shipped stub has, and its cell ends with its check.
+    assert task_cells == ["check(1)", "check(2)", "check(3)", "check(4)"]
+    assert len(todos) == 6
+    assert all(f"# TODO: {todo}" in stub for todo in todos)
+
+
+@pytest.mark.instructor
+def test_request_timing_shows_the_shipped_timer_every_task_but_the_first_still_to_do(capsys) -> None:
+    namespace = _run(REQUEST_TIMING)
+    capsys.readouterr()
+
+    # Asking whenever DriveBench may reacts quickly, and wastes, spends through
+    # faults, and runs out of budget.
+    assert [namespace["check"](task) for task in (1, 2, 3, 4)] == [True, False, False, False]
+    printed = capsys.readouterr().out
+    assert "PASS     asks when the scene changes: every event asked about within 1.5 s" in printed
+    assert "NOT YET  holds while the command holds: 23 of 33 requests wasted" in printed
+    assert "NOT YET  backs off under the outage" in printed
+    assert "NOT YET  keeps a reserve of the budget: 0 of 15 requests left" in printed
+    assert f"PASS     {MONOTONE_RESTRICTION}" in printed
+    assert f"PASS     {CONTROL_LOOP_UNBLOCKED}" in printed
+    assert type(namespace["RequestPolicy"](namespace["settings"])).__module__ == "submission.request_policy"
+
+
+def test_request_timing_drives_at_the_timing_the_brief_states() -> None:
+    namespace = _run(REQUEST_TIMING)
+    settings = namespace["RequestPolicySettings"].from_vla(namespace["drive_config"](60).vla)
+
+    assert (settings.action_horizon_s, settings.request_timeout_s, settings.request_budget) == (4.0, 6.0, 60)
+    assert namespace["drive_config"](60).command_validation.maximum_command_age_s == 2.5
+    assert namespace["ANSWER_LATENCY_S"] == 1.4
+    brief = (REQUEST_TIMING.parent / "README.md").read_text()
+    assert "a command holds for 4.0 s" in " ".join(brief.split())
+    assert "an answer more than 2.5 s old when it arrives is refused" in " ".join(brief.split())
+
+
+def test_request_timing_counts_waste_as_the_brief_states() -> None:
+    namespace = _run(REQUEST_TIMING)
+    drive, wasted = namespace["drive"], namespace["wasted"]
+
+    # Asking as soon as each answer arrives, 1.4 s in, leaves 2.6 s of a 4 s
+    # command: more than the 2.5 s age limit, so on the empty road it is waste.
+    eager = drive(policy=_Every(1.4))
+    reasons = wasted(eager)
+    early = [request for request in eager.requests if request.sent_s < 8.0]
+    assert [request.sent_s for request in early[:3]] == [0.0, 1.4, 2.8]
+    assert early[0].request_id not in reasons
+    assert reasons[early[1].request_id] == "2.6 s left of the command, nothing changed"
+    # 1.5 s in, the request falls in the command's last 2.5 s: never waste.
+    patient = drive(policy=_Every(1.5))
+    assert not [request for request in patient.requests if request.request_id in wasted(patient)]
+    # During a fault, one request every 5 s wastes nothing, and more often does.
+    outage = namespace["FaultWindow"](namespace["FaultKind"].PROVIDER_OUTAGE, 14.0, 24.0)
+    assert any("in a fault" in reason for reason in wasted(drive(policy=_Every(1.0), faults=[outage])).values())
+    assert not any("in a fault" in reason for reason in wasted(drive(policy=_Every(5.0), faults=[outage])).values())
+
+
+def test_request_timing_finds_each_event_and_the_delay_to_the_next_request() -> None:
+    namespace = _run(REQUEST_TIMING)
+    found = namespace["reactions"](namespace["drive"](policy=_Every(1.5)))
+
+    assert [label for _, label, _ in found][:2] == ["stopped-car within 50 m", "left lane occupied"]
+    assert all(delay_s is not None and delay_s <= 1.5 for _, _, delay_s in found)
+    assert namespace["falling"](1.0, 1.0, 3.0) == 1.0
+    assert namespace["falling"](2.0, 1.0, 3.0) == 0.5
+    assert namespace["falling"](None, 1.0, 3.0) == 0.0
+
+
+def test_request_timing_checks_a_policy_as_the_gates_do() -> None:
+    namespace = _run(REQUEST_TIMING)
+
+    class Yes(_Every):
+        def should_request(self, tick):
+            return "yes"
+
+    class Slow(_Every):
+        def should_request(self, tick):
+            time.sleep(0.15)
+            return False
+
+    monotone, unblocked = namespace["gate_checks"]([namespace["drive"](policy=Yes(1.0))])
+    assert monotone[:2] == (MONOTONE_RESTRICTION, False)
+    assert "should_request(tick) must return True or False; got 'yes'" in monotone[2]
+    assert unblocked[:2] == (CONTROL_LOOP_UNBLOCKED, True)
+    namespace["DURATION_S"] = 0.3
+    _, unblocked = namespace["gate_checks"]([namespace["drive"](policy=Slow(1.0))])
+    assert unblocked[:2] == (CONTROL_LOOP_UNBLOCKED, False)
+
+
+def test_request_timing_reads_a_closed_loop_event_log(tmp_path: Path, capsys) -> None:
+    config = load_config(PROJECT_ROOT / "configs" / "demo-vla-fixture.yaml")
+    config.simulator.horizon = 60
+    config.vla = replace(
+        config.vla,
+        fixture=replace(config.vla.fixture, path=str(PROJECT_ROOT / config.vla.fixture.path)),
+    )
+    config.faults = (FaultSpec("quota-1", FaultKind.PROVIDER_QUOTA, start_step=20, duration_steps=20),)
+    log = tmp_path / "events.jsonl"
+    config.event_log = EventLogSettings(enabled=True, path=str(log), scenario_id="request-timing")
+    run_simulation(
+        config,
+        controller_factory=lambda settings: _Standstill(),
+        request_policy_factory=lambda settings: _Every(0.5),
+    )
+
+    namespace = _run(
+        REQUEST_TIMING,
+        edit=lambda source: source.replace("EVENT_LOGS = []", f"EVENT_LOGS = [{str(log)!r}]"),
+    )
+    printed = capsys.readouterr().out
+    (records,) = namespace["runs_in_event_log"](log)
+    line = namespace["drive_from_event_log"](records)
+
+    assert line["action_horizon_s"] == 2.0
+    # The fixture demo is unpaced, and the log still gives the pace it held.
+    assert line["asked_factor"] is None and line["achieved_factor"] > 0.0
+    assert "not paced" in printed
+    (fault,) = line["faults"]
+    assert fault[0] == "provider_quota" and fault[1] == pytest.approx(2.0)
+    refused = [request for request in line["requests"] if request["refused"]]
+    answered = [request for request in line["requests"] if not request["refused"]]
+    assert refused and all(fault[1] <= request["sent_s"] < fault[2] for request in refused)
+    assert answered and all(request["authority"] is not None for request in answered if request["collected_s"])
+    assert f"== events.jsonl: {len(line['requests'])} requests" in printed
+
+    # A second run into the same file is appended: each run is read on its own.
+    again = [
+        json.dumps({**json.loads(text), "run_id": "second-run"})
+        for text in log.read_text().splitlines()
+    ]
+    log.write_text(log.read_text() + "\n".join(again) + "\n")
+    first, second = namespace["runs_in_event_log"](log)
+    assert namespace["drive_from_event_log"](first) == line
+    assert namespace["drive_from_event_log"](second) == line
+    capsys.readouterr()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the figures have no window to show in
+        for number, run in enumerate((first, second), start=1):
+            namespace["describe_log"](namespace["drive_from_event_log"](run), f"events.jsonl, run {number} of 2")
+    assert f"== events.jsonl, run 2 of 2: {len(line['requests'])} requests" in capsys.readouterr().out

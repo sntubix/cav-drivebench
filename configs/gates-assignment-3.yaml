@@ -1,0 +1,95 @@
+version: 1
+id: drivebench-gates-assignment-3-public
+visibility: public
+no_score: >-
+  Assignment 3 is marked from hidden closed-loop runs with the pinned model,
+  never from this run; see "How you are marked" in course/assignment-3/README.md.
+
+# Assignment 3 drives the Assignment 1 routes with the model asked when your
+# request_policy.py decides, under a request budget per scenario, so it needs a
+# base configuration that enables vla:
+#
+#   uv run metadrive-starter gates --manifest configs/gates-assignment-3.yaml \
+#     --config configs/demo-vla-fixture.yaml
+#
+# Each route's budget is one request per 2 s of the reference controller's time
+# to arrive, so asking every minimum_interval_s spends it early. Once the budget
+# is spent the local fallback drives on.
+#
+# Fault scenarios fail every request in a window, each in one way a provider
+# fails. Every request the provider receives counts against the budget, failed
+# or not.
+#
+# A gate catches what breaks a run, never how well it drives: a route or a fault
+# scenario that crashes, leaves the road, or does not arrive fails no gate. Only
+# a run that stops on an error does. Passing every gate therefore says nothing
+# about your policy: the shipped one passes, and still has no request left for
+# an obstacle that comes late. Instructors grade with other budgets, timings,
+# maps, and combinations.
+scenarios:
+  - id: straight
+    map: S
+    seed: 0
+    horizon: 2000
+    request_budget: 7
+  - id: curve
+    map: C
+    seed: 0
+    horizon: 2000
+    request_budget: 13
+  - id: intersection
+    map: X
+    seed: 0
+    horizon: 2000
+    request_budget: 9
+  - id: roundabout
+    map: O
+    seed: 0
+    horizon: 2000
+    request_budget: 11
+  - id: mixed
+    map: XTOC
+    seed: 0
+    horizon: 2000
+    request_budget: 25
+  # The budget runs out within the first few seconds.
+  - id: spent-budget
+    map: C
+    seed: 0
+    horizon: 2000
+    request_budget: 2
+
+  # Every request in the window times out.
+  - id: provider-timeout
+    map: C
+    seed: 0
+    horizon: 250
+    request_budget: 20
+    faults:
+      - {id: timeout-1, kind: provider_timeout, start_step: 10, duration_steps: 60}
+  # Answers arrive in a form the decoder refuses.
+  - id: malformed-output
+    map: O
+    seed: 0
+    horizon: 250
+    request_budget: 20
+    faults:
+      - {id: malformed-1, kind: malformed_output, start_step: 10, duration_steps: 60}
+  # The provider refuses every request in the window for quota.
+  - id: provider-quota
+    map: X
+    seed: 0
+    horizon: 250
+    request_budget: 20
+    faults:
+      - {id: quota-1, kind: provider_quota, start_step: 10, duration_steps: 100}
+  # The model is unavailable for 20 s, ten times a command's horizon, while a
+  # stopped car comes into range.
+  - id: provider-outage
+    map: S
+    seed: 0
+    horizon: 250
+    request_budget: 20
+    stopped_vehicle_ahead_m: 45.0
+    faults:
+      - {id: outage-1, kind: provider_outage, start_step: 10, duration_steps: 200}

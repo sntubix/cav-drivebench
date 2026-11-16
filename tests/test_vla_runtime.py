@@ -5,12 +5,15 @@ from collections.abc import Mapping
 import pytest
 
 from metadrive_starter.config import config_from_dict
-from metadrive_starter.faults import FaultInjectingModelProvider
+from metadrive_starter.faults import FaultInjectingModelProvider, FaultSpec
 from metadrive_starter.vla import (
     HTTPTransportResponse,
+    ModelProviderError,
+    ModelRequest,
     OpenAICompatibleHTTPProvider,
     RecordedModelProvider,
     RequestCappedModelProvider,
+    RGBFrame,
     VLAInferenceScheduler,
     VertexModelProvider,
 )
@@ -20,6 +23,7 @@ from metadrive_starter.vla_runtime import (
     build_http_vla_provider,
     build_http_vla_scheduler,
     build_vertex_vla_provider,
+    prepare_provider,
     build_vla_provider,
     build_vla_scheduler,
 )
@@ -113,14 +117,12 @@ def test_scheduler_composes_one_shared_per_run_request_cap() -> None:
     try:
         assert scheduler.request_budget is not None
         assert scheduler.request_budget.maximum_requests == 2
-        assert isinstance(scheduler.pipeline.provider, FaultInjectingModelProvider)
+        # Faults are injected inside the cap, so an injected failure costs a request.
+        assert isinstance(scheduler.pipeline.provider, RequestCappedModelProvider)
+        assert scheduler.pipeline.provider.budget is scheduler.request_budget
         assert isinstance(
             scheduler.pipeline.provider.provider,
-            RequestCappedModelProvider,
-        )
-        assert (
-            scheduler.pipeline.provider.provider.budget
-            is scheduler.request_budget
+            FaultInjectingModelProvider,
         )
     finally:
         scheduler.close()
@@ -248,3 +250,62 @@ def test_vertex_provider_requires_named_project_environment() -> None:
 
     with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT"):
         build_vertex_vla_provider(settings, environment={})
+
+
+@pytest.mark.parametrize("kind", ["provider_timeout", "provider_quota", "provider_outage"])
+def test_an_injected_provider_failure_costs_a_request(kind: str) -> None:
+    scheduler = build_vla_scheduler(
+        _settings(maximum_requests_per_run=2),
+        transport=RecordingTransport(),
+        inject_faults=True,
+    )
+    request = ModelRequest(
+        request_id="request-1",
+        prompt="Describe the scene",
+        frame=RGBFrame(timestamp_s=0.0, width=1, height=1, rgb_bytes=b"\x00\x00\x00"),
+        created_at_s=0.0,
+    )
+    try:
+        provider = scheduler.pipeline.provider
+        assert isinstance(provider, RequestCappedModelProvider)
+        assert isinstance(provider.provider, FaultInjectingModelProvider)
+        provider.provider.register(request.request_id, (FaultSpec("fault-1", kind, 0, 1),))
+
+        with pytest.raises(ModelProviderError, match="injected"):
+            provider.generate(request, timeout_s=1.0)
+
+        assert scheduler.request_budget is not None
+        assert scheduler.request_budget.request_labels == ("request-1",)
+    finally:
+        scheduler.close()
+
+
+def test_prepare_provider_warms_what_can_be_warmed_and_tolerates_a_failed_warm_up(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from metadrive_starter.vla import ModelProviderError
+
+    class Warmable:
+        def __init__(self, error: Exception | None = None) -> None:
+            self.error = error
+            self.timeouts: list[float] = []
+
+        def prepare(self, *, timeout_s: float) -> float:
+            self.timeouts.append(timeout_s)
+            if self.error is not None:
+                raise self.error
+            return 0.25
+
+        def generate(self, request, *, timeout_s):  # pragma: no cover - never called
+            raise AssertionError
+
+    warmed = Warmable()
+    assert prepare_provider(warmed, timeout_s=6.0) == 0.25
+    assert warmed.timeouts == [6.0]
+
+    assert prepare_provider(object(), timeout_s=6.0) is None
+
+    failing = Warmable(ModelProviderError("Vertex client could not be prepared (RuntimeError)"))
+    with caplog.at_level("WARNING", logger="metadrive_starter.vla_runtime"):
+        assert prepare_provider(failing, timeout_s=6.0) is None
+    assert "warm-up failed" in caplog.text

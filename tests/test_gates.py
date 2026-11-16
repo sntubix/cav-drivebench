@@ -8,11 +8,16 @@ from metadrive_starter.config import AppConfig, EventLogSettings, config_from_di
 from metadrive_starter.faults import FaultKind, FaultSpec
 from metadrive_starter.gates import (
     FAULTS_SURVIVED,
+    REQUEST_BUDGET,
     GatePlan,
     GateReport,
     GateResult,
     GateScenario,
     GateStatus,
+    _Drive,
+    _request_budget_respected,
+    _runs_finish,
+    _scenario_score,
     check_gate_plan,
     drive_route,
     load_gate_plan,
@@ -21,6 +26,7 @@ from metadrive_starter.gates import (
     write_release_manifest,
 )
 from metadrive_starter.submission import load_controller
+from metadrive_starter.simulation import RunSummary, VLARunMetrics
 from metadrive_starter.vla import OUTPUT_CONTRACT, OutputContractWarning
 
 
@@ -486,6 +492,27 @@ def test_route_that_never_completes_costs_its_driving_credit_and_no_gate(
     assert report.score.driving == 0.0
 
 
+def test_a_route_whose_ego_left_it_stops_no_run_and_earns_no_credit() -> None:
+    # A car whose lane leaves its route ends the drive there. That is how it
+    # drove, never an error: it fails no gate, and the route earns nothing.
+    drive = _Drive(
+        GateScenario(scenario_id="straight", map="S", seed=0, horizon=600, par_steps=134),
+        RunSummary(steps=120, total_reward=0.0, control_mode="autopilot", left_route=True),
+        None,
+    )
+
+    result = _runs_finish([drive], scored=True)
+    score = _scenario_score(drive)
+
+    assert result.status is GateStatus.PASSED
+    assert result.detail == (
+        "1 route driven without an error; 1 route did not complete, so earned no "
+        "driving credit: straight: left its route"
+    )
+    assert score.credit == 0.0
+    assert score.problem == "left its route"
+
+
 def test_route_that_never_completes_fails_no_gate_where_routes_are_not_scored(
     tmp_path: Path,
 ) -> None:
@@ -565,6 +592,17 @@ class Arbiter:
     def review(self, request):
         return True
 """
+REQUEST_POLICY = """
+class RequestPolicy:
+    def __init__(self, settings):
+        pass
+
+    def begin_episode(self):
+        pass
+
+    def should_request(self, tick):
+        return True
+"""
 
 
 def _vla_base(*, request_timeout_s: float = 1.0) -> AppConfig:
@@ -591,17 +629,36 @@ def _short_plan() -> GatePlan:
     )
 
 
+def _vla_submission(
+    tmp_path: Path,
+    *,
+    observation_source: str = OBSERVATION,
+    arbitration_source: str = ARBITRATION,
+    request_policy_source: str = REQUEST_POLICY,
+    controller_source: str = WELL_BEHAVED,
+) -> Path:
+    submission = _submission(tmp_path / "submission", controller_source)
+    (submission / "observation.py").write_text(observation_source)
+    (submission / "arbitration.py").write_text(arbitration_source)
+    (submission / "request_policy.py").write_text(request_policy_source)
+    return submission
+
+
 def _observation_gates(
     tmp_path: Path,
     observation_source: str,
     *,
     request_timeout_s: float = 1.0,
     arbitration_source: str = ARBITRATION,
+    request_policy_source: str = REQUEST_POLICY,
     plan: GatePlan | None = None,
 ) -> dict[str, GateResult]:
-    submission = _submission(tmp_path / "submission", WELL_BEHAVED)
-    (submission / "observation.py").write_text(observation_source)
-    (submission / "arbitration.py").write_text(arbitration_source)
+    submission = _vla_submission(
+        tmp_path,
+        observation_source=observation_source,
+        arbitration_source=arbitration_source,
+        request_policy_source=request_policy_source,
+    )
     report = run_gates(
         submission,
         plan or _short_plan(),
@@ -841,8 +898,9 @@ def test_arbiter_within_the_proposal_passes_the_model_gates(
 
     assert results[LOADS].status is GateStatus.PASSED
     assert results[MONOTONE].status is GateStatus.PASSED
-    assert results[MONOTONE].detail.endswith(
-        "ticks reviewed, none granting more authority than the model proposed"
+    assert (
+        "ticks reviewed, none granting more authority than the model proposed; "
+        in results[MONOTONE].detail
     )
     assert results[UNBLOCKED].status is GateStatus.PASSED
     assert "on the control loop within the 0.1 s control step" in results[UNBLOCKED].detail
@@ -1024,7 +1082,7 @@ def test_public_assignment_2_gates_add_one_fault_scenario_per_kind_to_the_routes
     assert '"How you are marked" in course/assignment-2/README.md' in plan.no_score
     assert all(route.par_steps is None for route in routes)
     assert sorted(fault.kind for scenario in faulted for fault in scenario.faults) == sorted(
-        FaultKind
+        set(FaultKind) - {FaultKind.PROVIDER_QUOTA, FaultKind.PROVIDER_OUTAGE}
     )
     lidar = next(scenario for scenario in faulted if scenario.scenario_id == "lidar-dropout")
     # A LiDAR dropout acts only on a LiDAR safety scene.
@@ -1121,9 +1179,7 @@ def test_fault_scenarios_need_a_base_configuration_that_asks_the_model() -> None
 
 
 def _fault_gates(tmp_path: Path, controller_source: str) -> GateReport:
-    submission = _submission(tmp_path / "submission", controller_source)
-    (submission / "observation.py").write_text(OBSERVATION)
-    (submission / "arbitration.py").write_text(ARBITRATION)
+    submission = _vla_submission(tmp_path, controller_source=controller_source)
     return run_gates(submission, _fault_plan(), base_config=_vla_base(), release_root=tmp_path)
 
 
@@ -1163,7 +1219,7 @@ def test_a_fault_scenario_that_leaves_the_road_fails_no_gate(tmp_path: Path) -> 
     assert results[FAULTS_SURVIVED].status is GateStatus.PASSED
     assert results[FAULTS_SURVIVED].detail == (
         "1 fault scenario driven without a stopped run, under camera_dropout; "
-        "1 fault scenario crashed or left the road, which fails no gate: "
+        "1 fault scenario crashed or left the road or its route, which fails no gate: "
         "camera-dark: left the road"
     )
 
@@ -1179,9 +1235,7 @@ def test_a_fault_scenario_an_error_stops_fails_the_fault_gate(tmp_path: Path) ->
 
 
 def test_a_run_of_routes_alone_does_not_run_the_fault_gate(tmp_path: Path) -> None:
-    submission = _submission(tmp_path / "submission", WELL_BEHAVED)
-    (submission / "observation.py").write_text(OBSERVATION)
-    (submission / "arbitration.py").write_text(ARBITRATION)
+    submission = _vla_submission(tmp_path)
 
     report = run_gates(
         submission,
@@ -1221,3 +1275,283 @@ def test_a_scored_plan_needs_par_for_every_route() -> None:
         GatePlan("scored", "public", (route,))
     with pytest.raises(ValueError, match="no_score must be text"):
         GatePlan("blank", "public", (route,), no_score="  ")
+
+
+# The request policy and the request budget.
+
+
+def _request_policy(answer: str, *, begin: str = "pass") -> str:
+    """A request policy whose should_request returns ``answer``, an expression in ``tick``."""
+    return (
+        "from metadrive_starter.vla import RequestPolicyError\n"
+        "def refuse(message):\n"
+        "    raise RequestPolicyError(message)\n"
+        + REQUEST_POLICY.replace("return True", f"return {answer}").replace(
+            "    def begin_episode(self):\n        pass\n",
+            f"    def begin_episode(self):\n        {begin}\n",
+        )
+    )
+
+
+def _budget_plan(request_budget: int = 3) -> GatePlan:
+    return GatePlan(
+        "test-request-budget",
+        "public",
+        (
+            GateScenario(
+                scenario_id="straight",
+                map="S",
+                seed=0,
+                horizon=40,
+                par_steps=40,
+                request_budget=request_budget,
+            ),
+        ),
+    )
+
+
+def test_a_policy_within_its_budget_passes_the_model_and_budget_gates(tmp_path: Path) -> None:
+    # Asking on every tick spends the whole budget, and never more.
+    results = _observation_gates(tmp_path, OBSERVATION, plan=_budget_plan(3))
+
+    assert results[LOADS].status is GateStatus.PASSED
+    assert results[MONOTONE].status is GateStatus.PASSED
+    assert results[MONOTONE].detail.endswith("40 request decisions made, each True or False")
+    assert results[UNBLOCKED].status is GateStatus.PASSED
+    assert "the slowest request policy call in" in results[UNBLOCKED].detail
+    assert results[REQUEST_BUDGET] == GateResult(
+        REQUEST_BUDGET,
+        GateStatus.PASSED,
+        "3 model requests attempted across 1 budgeted drive, each within its budget; "
+        "1 used the whole of it",
+    )
+
+
+def test_a_plan_without_any_budget_runs_no_budget_gate(tmp_path: Path) -> None:
+    results = _observation_gates(tmp_path, OBSERVATION)
+
+    assert REQUEST_BUDGET not in results
+    assert results[MONOTONE].status is GateStatus.PASSED
+
+
+@pytest.mark.parametrize(
+    ("answer", "problem"),
+    [
+        ("tick.requests_remaining", "should_request(tick) must return True or False; got None"),
+        ("tick.scene.objects[0]", "should_request(tick) raised IndexError: tuple index out of range"),
+        # The gates' own refusal is a RequestPolicyError too; a team's never passes for one.
+        ("refuse('no')", "should_request(tick) raised RequestPolicyError: no"),
+    ],
+    ids=["not-a-bool", "raises", "raises-request-policy-error"],
+)
+def test_a_policy_answer_that_cannot_stand_fails_the_monotone_gate_and_the_run_drives_on(
+    tmp_path: Path,
+    answer: str,
+    problem: str,
+) -> None:
+    results = _observation_gates(
+        tmp_path, OBSERVATION, request_policy_source=_request_policy(answer)
+    )
+
+    assert results[MONOTONE].status is GateStatus.FAILED
+    assert results[MONOTONE].detail == (
+        f"straight: 30 request policy answers could not stand; the first: {problem}"
+    )
+    # DriveBench held each such request back itself rather than stopping the run.
+    assert "the run stopped" not in results[RUNS].detail
+    assert results[UNBLOCKED].status is GateStatus.PASSED
+
+
+def test_a_policy_that_outlasts_the_control_step_is_abandoned_and_fails(
+    tmp_path: Path,
+) -> None:
+    started = tmp_path / "should-request-started"
+    source = REQUEST_POLICY.replace(
+        "    def should_request(self, tick):\n",
+        "    def should_request(self, tick):\n"
+        "        import pathlib, time\n"
+        f"        pathlib.Path({str(started)!r}).touch()\n"
+        "        time.sleep(600.0)\n",
+    )
+
+    results = _observation_gates(
+        tmp_path, OBSERVATION, request_policy_source=source, plan=_budget_plan()
+    )
+
+    assert started.exists()
+    assert results[UNBLOCKED].status is GateStatus.FAILED
+    assert results[UNBLOCKED].detail == (
+        "straight: should_request(tick) had not returned after 0.1 s, the control step"
+    )
+    # Every later tick held its request without calling the policy again.
+    assert results[MONOTONE].status is GateStatus.PASSED
+    assert results[REQUEST_BUDGET].detail.startswith("0 model requests attempted")
+    assert "the run stopped" not in results[RUNS].detail
+
+
+def test_a_policy_whose_episode_reset_outlasts_the_control_step_stops_the_run(
+    tmp_path: Path,
+) -> None:
+    source = _request_policy("True", begin="import time; time.sleep(30.0)")
+
+    results = _observation_gates(tmp_path, OBSERVATION, request_policy_source=source)
+
+    assert results[UNBLOCKED].status is GateStatus.FAILED
+    assert results[UNBLOCKED].detail == (
+        "straight: begin_episode() had not returned after 0.1 s, the control step"
+    )
+    assert "straight: the run stopped: RequestPolicyOverrun" in results[RUNS].detail
+
+
+@pytest.mark.parametrize(
+    ("constructor", "message"),
+    [
+        ("raise ValueError('bad settings')", "raised ValueError: bad settings"),
+        (
+            "import time; time.sleep(30.0)",
+            "RequestPolicy(settings) had not returned after 0.2 s, the request timeout",
+        ),
+    ],
+    ids=["raises", "hangs"],
+)
+def test_a_policy_that_cannot_be_built_fails_to_load(
+    tmp_path: Path,
+    constructor: str,
+    message: str,
+) -> None:
+    source = REQUEST_POLICY.replace("        pass\n", f"        {constructor}\n", 1)
+
+    results = _observation_gates(
+        tmp_path,
+        OBSERVATION,
+        request_policy_source=source,
+        request_timeout_s=0.2,
+        plan=_budget_plan(),
+    )
+
+    assert results[LOADS].status is GateStatus.FAILED
+    assert "request_policy.py" in results[LOADS].detail
+    assert message in results[LOADS].detail
+    assert results[MONOTONE].status is GateStatus.NOT_RUN
+    assert results[REQUEST_BUDGET].status is GateStatus.NOT_RUN
+
+
+def test_submission_without_request_policy_file_fails_to_load_when_the_model_is_asked(
+    tmp_path: Path,
+) -> None:
+    submission = _vla_submission(tmp_path)
+    (submission / "request_policy.py").unlink()
+
+    report = run_gates(
+        submission,
+        _short_plan(),
+        base_config=_vla_base(),
+        release_root=tmp_path,
+    )
+
+    results = {result.gate: result for result in report.results}
+    assert results[LOADS].status is GateStatus.FAILED
+    assert "request_policy.py not found" in results[LOADS].detail
+
+
+def _drive_with(metrics: VLARunMetrics, request_budget: int | None) -> _Drive:
+    return _Drive(
+        GateScenario(scenario_id="straight", map="S", seed=0, horizon=40),
+        RunSummary(steps=40, total_reward=0.0, control_mode="vla_autopilot", vla_metrics=metrics),
+        None,
+        request_budget=request_budget,
+    )
+
+
+@pytest.mark.parametrize(
+    ("metrics", "problem"),
+    [
+        (
+            VLARunMetrics(enabled=True, request_cap=None),
+            "straight: the run enforced no budget of 5",
+        ),
+        (
+            VLARunMetrics(enabled=True, request_cap=5, provider_requests_attempted=6),
+            "straight: 6 requests attempted against a budget of 5",
+        ),
+    ],
+    ids=["unenforced", "exceeded"],
+)
+def test_the_budget_gate_checks_the_run_accounting(metrics: VLARunMetrics, problem: str) -> None:
+    result = _request_budget_respected([_drive_with(metrics, 5)])
+
+    assert result == GateResult(REQUEST_BUDGET, GateStatus.FAILED, problem)
+
+
+def test_the_budget_gate_judges_only_drives_with_a_budget_and_a_summary() -> None:
+    within = VLARunMetrics(enabled=True, request_cap=5, provider_requests_attempted=4)
+    stopped = replace(_drive_with(within, 5), summary=None, error=RuntimeError("stopped"))
+
+    result = _request_budget_respected(
+        [_drive_with(within, 5), stopped, _drive_with(VLARunMetrics(enabled=True), None)]
+    )
+
+    assert result.status is GateStatus.PASSED
+    assert result.detail == (
+        "4 model requests attempted across 1 budgeted drive, each within its budget; "
+        "0 used the whole of it"
+    )
+
+
+def test_request_budgets_need_a_base_configuration_that_asks_the_model() -> None:
+    with pytest.raises(ValueError, match="has request budgets, which need .* enables vla"):
+        check_gate_plan(_budget_plan(), config_from_dict({}))
+    check_gate_plan(_budget_plan(), _vla_base())
+
+
+def test_a_scenario_request_budget_parses_and_must_be_positive(tmp_path: Path) -> None:
+    path = tmp_path / "gates.yaml"
+    path.write_text(
+        "version: 1\nid: g\nvisibility: public\nno_score: Hidden.\nscenarios:\n"
+        "  - {id: a, map: S, seed: 0, horizon: 100, request_budget: 4}\n"
+    )
+
+    [scenario] = load_gate_plan(path).scenarios
+
+    assert scenario.request_budget == 4
+    for value in ("0", "-1", "2.5", "true"):
+        path.write_text(
+            "version: 1\nid: g\nvisibility: public\nno_score: Hidden.\nscenarios:\n"
+            f"  - {{id: a, map: S, seed: 0, horizon: 100, request_budget: {value}}}\n"
+        )
+        with pytest.raises(ValueError, match="request_budget must be a positive integer"):
+            load_gate_plan(path)
+
+
+def test_public_assignment_3_gates_budget_every_route_and_fail_requests_four_ways() -> None:
+    assignment_1 = load_gate_plan(PROJECT_ROOT / "configs" / "gates-assignment-1.yaml")
+    plan = load_gate_plan(PROJECT_ROOT / "configs" / "gates-assignment-3.yaml")
+
+    routes = {s.scenario_id: s for s in plan.scenarios if not s.is_fault_scenario}
+    faulted = [scenario for scenario in plan.scenarios if scenario.is_fault_scenario]
+    assert (plan.plan_id, plan.visibility) == ("drivebench-gates-assignment-3-public", "public")
+    assert plan.no_score is not None
+    assert '"How you are marked" in course/assignment-3/README.md' in plan.no_score
+    # Each Assignment 1 route, budgeted at one request per 2 s of its par.
+    for route in assignment_1.scenarios:
+        budgeted = routes[route.scenario_id]
+        assert (budgeted.map, budgeted.seed, budgeted.horizon) == (
+            route.map,
+            route.seed,
+            route.horizon,
+        )
+        assert route.par_steps is not None
+        assert budgeted.request_budget == round(route.par_steps * 0.1 / 2.0)
+    assert routes["spent-budget"].request_budget == 2
+    assert sorted(fault.kind for scenario in faulted for fault in scenario.faults) == sorted(
+        {
+            FaultKind.PROVIDER_TIMEOUT,
+            FaultKind.MALFORMED_OUTPUT,
+            FaultKind.PROVIDER_QUOTA,
+            FaultKind.PROVIDER_OUTAGE,
+        }
+    )
+    assert all(scenario.request_budget is not None for scenario in plan.scenarios)
+    outage = next(s for s in faulted if s.scenario_id == "provider-outage")
+    # An outage outlasts a command's horizon many times over.
+    assert outage.faults[0].duration_steps * 0.1 >= 10 * _vla_base().vla.action_horizon_s

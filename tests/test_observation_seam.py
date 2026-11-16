@@ -384,6 +384,18 @@ ENDORSING_ARBITER = """
             return True
 """
 
+ASKING_REQUEST_POLICY = """
+    class RequestPolicy:
+        def __init__(self, settings):
+            pass
+
+        def begin_episode(self):
+            pass
+
+        def should_request(self, tick):
+            return True
+"""
+
 
 def _submission(directory: Path, **files: str) -> Path:
     for name, source in files.items():
@@ -633,6 +645,7 @@ def test_cli_run_builds_observations_with_the_submission(capsys, tmp_path: Path)
         controller=NEUTRAL_CONTROLLER,
         observation=SUBMITTED_OBSERVATION,
         arbitration=ENDORSING_ARBITER,
+        request_policy=ASKING_REQUEST_POLICY,
     )
 
     status = main(_fixture_dry_run(team, tmp_path))

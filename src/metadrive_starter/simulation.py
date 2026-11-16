@@ -6,6 +6,7 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from statistics import median
+from typing import Any
 
 from metadrive_starter.config import AppConfig, ObservationSettings
 from metadrive_starter.controllers import (
@@ -17,14 +18,18 @@ from metadrive_starter.controllers import (
 )
 from metadrive_starter.episode_replay import write_episode_artifact
 from metadrive_starter.env import (
+    EgoLeftRoute,
     control_timestep_s,
     ego_state_info,
+    hold_ego_at_standstill,
     lane_change_waypoints,
     lane_topology,
     make_env,
     navigation_waypoints,
     simulation_time_s,
+    spawn_moving_vehicle_ahead,
     spawn_scenario_vehicle,
+    spawn_static_object_ahead,
     spawn_static_vehicle_ahead,
     spawn_stopped_vehicle_ahead,
     spawn_traffic_light_group_ahead,
@@ -77,7 +82,7 @@ from metadrive_starter.traffic_lights import (
     TrafficLightCycle,
     TrafficLightState,
 )
-from metadrive_starter.types import Action, ControlCommand, ControlTick, Plan
+from metadrive_starter.types import Action, ControlCommand, ControlTick, Plan, Point2D
 from metadrive_starter.units import mps_to_kmh
 from metadrive_starter.vla import (
     ArbitrationOutcome,
@@ -85,6 +90,7 @@ from metadrive_starter.vla import (
     AssessmentArbiterFactory,
     DefaultArbiter,
     DefaultObservationBuilder,
+    DefaultRequestPolicy,
     HighLevelAction,
     InferenceCompletion,
     InferenceDiscarded,
@@ -95,15 +101,32 @@ from metadrive_starter.vla import (
     ObservationBuilder,
     ObservationBuilderFactory,
     RequestBudget,
+    RequestCappedModelProvider,
+    RequestPolicy,
+    RequestPolicyFactory,
+    RequestPolicySettings,
     VLAInferencePipeline,
     VLA_PROMPT_CONTRACT_VERSION,
     VLAInferenceScheduler,
     build_arbiter,
     build_observation_builder,
+    build_request_policy,
     model_failure_category,
 )
 from metadrive_starter.vla_control import VLACommandRuntime, VLAControlUpdate
 from metadrive_starter.vla_runtime import build_vla_scheduler
+
+
+# Below this speed a car whose command brakes at STANDSTILL_BRAKE or more, with no
+# throttle, is at a standstill, and the runtime holds it there
+# (hold_ego_at_standstill): MetaDrive's brake leaves a stopped car creeping, at full
+# brake by up to about 0.23 m/s, and steering turns that creep into a pivot.
+STANDSTILL_SPEED_MPS = 0.3
+# A brake this firm stops a car below STANDSTILL_SPEED_MPS within one control step by
+# itself, so the hold takes away only the creep that follows. A lighter brake is left
+# to the controller, which may be slowing gently (a speed loop easing towards a low
+# target brakes at well under 0.01); it creeps at under 0.04 m/s.
+STANDSTILL_BRAKE = 0.2
 
 
 @dataclass(frozen=True)
@@ -136,6 +159,8 @@ class VLARunMetrics:
     submissions_busy: int = 0
     submissions_rate_limited: int = 0
     submissions_closed: int = 0
+    # Ticks on which the request policy held a request back.
+    submissions_held: int = 0
     responses_succeeded: int = 0
     responses_failed: int = 0
     responses_discarded: int = 0
@@ -161,6 +186,11 @@ class VLARunMetrics:
     arbitration_problems: int = 0
     # The slowest arbitrate or review call.
     arbitration_slowest_s: float | None = None
+    # Request policy answers that could not stand: a should_request that raised
+    # or did not answer True or False, which held that tick's request back.
+    request_policy_problems: int = 0
+    # The slowest should_request call.
+    request_policy_slowest_s: float | None = None
     latency_p50_s: float | None = None
     latency_p95_s: float | None = None
     latency_max_s: float | None = None
@@ -189,12 +219,16 @@ class RunSummary:
     observation: str | None = None
     # Qualified class name of the arbiter; None without the VLA subsystem.
     arbiter: str | None = None
+    # Qualified class name of the request policy; None without the VLA subsystem.
+    request_policy: str | None = None
     # Control ticks whose action the actuator range had to clamp.
     controller_outputs_clamped: int = 0
     route_completion: float = 0.0
     arrived: bool = False
     crashed: bool = False
     went_off_road: bool = False
+    # The ego's lane left its navigation route, so the run ended there.
+    left_route: bool = False
     safety_interventions: int = 0
     emergency_brakes: int = 0
     minimum_safety_gap_m: float | None = None
@@ -225,6 +259,7 @@ class _VLAMetricsCollector:
         self.submissions_busy = 0
         self.submissions_rate_limited = 0
         self.submissions_closed = 0
+        self.submissions_held = 0
         self.responses_succeeded = 0
         self.responses_failed = 0
         self.responses_discarded = 0
@@ -233,6 +268,8 @@ class _VLAMetricsCollector:
         self.arbitration_revocations = 0
         self.arbitration_problems = 0
         self.arbitration_slowest_s: float | None = None
+        self.request_policy_problems = 0
+        self.request_policy_slowest_s: float | None = None
         self.authority_steps = 0
         self.fallback_steps = 0
         self.runtime_errors = 0
@@ -271,6 +308,8 @@ class _VLAMetricsCollector:
             self.submissions_rate_limited += 1
         elif submission is InferenceSubmitDisposition.CLOSED:
             self.submissions_closed += 1
+        elif submission is InferenceSubmitDisposition.HELD:
+            self.submissions_held += 1
 
         if update.completion is not None:
             self.observe_completion(update.completion)
@@ -285,6 +324,12 @@ class _VLAMetricsCollector:
                     answer.elapsed_s,
                     self.arbitration_slowest_s or 0.0,
                 )
+        if update.request is not None:
+            self.request_policy_problems += int(update.request.problem is not None)
+            self.request_policy_slowest_s = max(
+                update.request.elapsed_s,
+                self.request_policy_slowest_s or 0.0,
+            )
         if update.validation is not None:
             disposition = update.validation.disposition.value
             self.validations[disposition] += 1
@@ -372,6 +417,7 @@ class _VLAMetricsCollector:
             submissions_busy=self.submissions_busy,
             submissions_rate_limited=self.submissions_rate_limited,
             submissions_closed=self.submissions_closed,
+            submissions_held=self.submissions_held,
             responses_succeeded=self.responses_succeeded,
             responses_failed=self.responses_failed,
             responses_discarded=self.responses_discarded,
@@ -396,6 +442,8 @@ class _VLAMetricsCollector:
             arbitration_revocations=self.arbitration_revocations,
             arbitration_problems=self.arbitration_problems,
             arbitration_slowest_s=self.arbitration_slowest_s,
+            request_policy_problems=self.request_policy_problems,
+            request_policy_slowest_s=self.request_policy_slowest_s,
             latency_p50_s=median(ordered) if ordered else None,
             latency_p95_s=_nearest_rank_percentile(ordered, 0.95),
             latency_max_s=max(ordered) if ordered else None,
@@ -439,6 +487,7 @@ def run_simulation(
     controller_factory: VehicleControllerFactory | None = None,
     observation_factory: ObservationBuilderFactory | None = None,
     arbitration_factory: AssessmentArbiterFactory | None = None,
+    request_policy_factory: RequestPolicyFactory | None = None,
 ) -> RunSummary:
     if controller_factory is None and not config.simulator.manual_control:
         # The reference drives, tuned as it tunes the starting gains.
@@ -477,6 +526,7 @@ def run_simulation(
         controller = _build_controller(config, controller_factory)
         observation_builder = _build_observation_builder(config, observation_factory)
         arbiter = _build_arbiter(config, arbitration_factory)
+        request_policy = _build_request_policy(config, request_policy_factory)
         if dry_run:
             clamped = _dry_run_wiring(config, controller)
             summary = RunSummary(
@@ -486,6 +536,7 @@ def run_simulation(
                 controller=_qualified_name(controller),
                 observation=_qualified_name(observation_builder),
                 arbiter=_qualified_name(arbiter),
+                request_policy=_qualified_name(request_policy),
                 controller_outputs_clamped=clamped,
                 run_id=run_id,
                 event_log_path=event_log_path,
@@ -506,6 +557,7 @@ def run_simulation(
                 controller=controller,
                 observation_builder=observation_builder,
                 arbiter=arbiter,
+                request_policy=request_policy,
             )
         _event(
             event_logger,
@@ -540,6 +592,7 @@ def _run_live_simulation(
     controller: VehicleController | None,
     observation_builder: ObservationBuilder | None,
     arbiter: AssessmentArbiter | None,
+    request_policy: RequestPolicy | None,
 ) -> RunSummary:
     perception = BasicPerception(prefer_info=config.perception.prefer_info)
     planner = WaypointPathPlanner(
@@ -598,6 +651,8 @@ def _run_live_simulation(
     steps = 0
     crashed = False
     went_off_road = False
+    reached_arrival_point = False
+    left_route = False
     safety_interventions = 0
     emergency_brakes = 0
     minimum_safety_gap_m: float | None = None
@@ -620,12 +675,15 @@ def _run_live_simulation(
     previous_execution: CommandExecutionDecision | None = None
     previous_target_speed_mps: float | None = None
     previous_control_authority: str | None = None
+    # The latest plan's curve speed limit, which the request policy sees.
+    previous_route_speed_cap_mps: float | None = None
     traffic_light_controller: TrafficLightController | None = None
     fault_schedule = FaultSchedule(config.faults)
     vla_metrics = _VLAMetricsCollector(enabled=config.vla.enabled)
     control_dt_s = control_timestep_s(config.simulator)
     try:
         observation, info = env.reset()
+        arrival_route_m = _arrival_route_m(env, config.scenario.arrival_distance_m)
         if config.scenario.stopped_vehicle_ahead_m is not None:
             actor = spawn_stopped_vehicle_ahead(
                 env,
@@ -666,6 +724,51 @@ def _run_live_simulation(
                     "lateral_m": stopped.lateral_m,
                     "speed_mps": 0.0,
                     "kind": stopped.kind,
+                },
+            )
+        for moving in config.scenario.moving_vehicles:
+            actor = spawn_moving_vehicle_ahead(
+                env,
+                moving.distance_m,
+                moving.speed_mps,
+                lane_offset=moving.lane_offset,
+                vehicle_kind=moving.kind,
+                name=f"scenario-{moving.vehicle_id}",
+            )
+            _event(
+                event_logger,
+                "scenario_vehicle_spawned",
+                sim_time_s=0.0,
+                payload={
+                    "object_id": str(actor.id),
+                    "vehicle_id": moving.vehicle_id,
+                    "distance_m": moving.distance_m,
+                    "lane_offset": moving.lane_offset,
+                    "lateral_m": 0.0,
+                    "speed_mps": moving.speed_mps,
+                    "kind": moving.kind,
+                },
+            )
+        for placed in config.scenario.objects:
+            actor = spawn_static_object_ahead(
+                env,
+                placed.distance_m,
+                lane_offset=placed.lane_offset,
+                lateral_m=placed.lateral_m,
+                kind=placed.kind,
+                name=f"scenario-{placed.object_id}",
+            )
+            _event(
+                event_logger,
+                "scenario_object_spawned",
+                sim_time_s=0.0,
+                payload={
+                    "object_id": str(actor.id),
+                    "scenario_object_id": placed.object_id,
+                    "distance_m": placed.distance_m,
+                    "lane_offset": placed.lane_offset,
+                    "lateral_m": placed.lateral_m,
+                    "kind": placed.kind,
                 },
             )
         for scenario_vehicle in config.scenario.vehicles:
@@ -741,13 +844,11 @@ def _run_live_simulation(
             )
             vla_metrics.bind_request_budget(scheduler.request_budget)
             vla_metrics.bind_pipeline(scheduler.pipeline)
+            provider = scheduler.pipeline.provider
+            if isinstance(provider, RequestCappedModelProvider):
+                provider = provider.provider
             fault_provider = (
-                scheduler.pipeline.provider
-                if isinstance(
-                    scheduler.pipeline.provider,
-                    FaultInjectingModelProvider,
-                )
-                else None
+                provider if isinstance(provider, FaultInjectingModelProvider) else None
             )
             vla_runtime = VLACommandRuntime(
                 scheduler,
@@ -756,6 +857,7 @@ def _run_live_simulation(
                 run_id=run_id,
                 fault_provider=fault_provider,
                 arbiter=arbiter,
+                request_policy=request_policy,
             )
         if pacer is not None:
             pacer.reset(simulation_time_s(env))
@@ -770,6 +872,7 @@ def _run_live_simulation(
             lane_change_decision: LaneChangeDecision | None = None
             lane_change_clearance: LaneChangeClearanceDecision | None = None
             lane_change_context: dict[str, object] | None = None
+            standstill_hold = False
             target_speed_mps = config.controller.target_speed_mps
             raw_target_speed_mps = target_speed_mps
             now_s = simulation_time_s(env)
@@ -859,6 +962,7 @@ def _run_live_simulation(
                         ego_speed_mps=frame.ego.speed_mps,
                         cruise_speed_mps=config.controller.target_speed_mps,
                         active_faults=active_faults,
+                        route_speed_cap_mps=previous_route_speed_cap_mps,
                     )
                     execution = update.execution
                     target_speed_mps = execution.target_speed_mps
@@ -959,11 +1063,13 @@ def _run_live_simulation(
                     # Every decision this tick passed through, so that a start the
                     # route forces into an abort is still counted and logged.
                     lane_change_decisions = [lane_change_decision]
+                    rebuilt_route: list[Point2D] | None = None
+                    route_lost: EgoLeftRoute | None = None
                     if lane_change_decision.phase is LaneChangePhase.STARTED:
                         assert lane_change_decision.source_lane_index is not None
                         assert lane_change_decision.target_lane_index is not None
                         try:
-                            route = lane_change_waypoints(
+                            rebuilt_route = lane_change_waypoints(
                                 env,
                                 config.planner.waypoint_spacing_m,
                                 lane_offset=(
@@ -983,22 +1089,22 @@ def _run_live_simulation(
                                 reason=forced_abort_reason,
                             )
                             lane_change_decisions.append(lane_change_decision)
-                            route = navigation_waypoints(
-                                env,
-                                config.planner.waypoint_spacing_m,
-                            )
-                        planner.reset(route)
-                        assert future_path is not None
-                        future_path.reset(route)
 
-                    elif lane_change_decision.phase in {
+                    # A start whose route was unavailable is aborted by now, so it
+                    # rebuilds the navigation route here too.
+                    if lane_change_decision.phase in {
                         LaneChangePhase.COMPLETED,
                         LaneChangePhase.ABORTED,
                     }:
-                        route = navigation_waypoints(
-                            env,
-                            config.planner.waypoint_spacing_m,
-                        )
+                        try:
+                            rebuilt_route = navigation_waypoints(
+                                env,
+                                config.planner.waypoint_spacing_m,
+                            )
+                        except EgoLeftRoute as exc:
+                            route_lost = exc
+                    if rebuilt_route is not None:
+                        route = rebuilt_route
                         planner.reset(route)
                         assert future_path is not None
                         future_path.reset(route)
@@ -1037,7 +1143,24 @@ def _run_live_simulation(
                                 },
                             )
 
+                    if route_lost is not None:
+                        # No route ahead can be sampled from a lane off the route,
+                        # so the drive ends here, as an outcome and not an error.
+                        left_route = True
+                        _event(
+                            event_logger,
+                            "ego_left_route",
+                            sim_time_s=now_s,
+                            payload={
+                                "reason": str(route_lost),
+                                "ego": frame.ego,
+                                "lane_index": [str(part) for part in env.agent.lane_index],
+                            },
+                        )
+                        break
+
                 plan = planner.plan(frame)
+                previous_route_speed_cap_mps = plan.route_speed_cap_mps
                 requested_target_speed_mps = target_speed_mps
                 if plan.route_speed_cap_mps is not None:
                     target_speed_mps = min(
@@ -1143,6 +1266,11 @@ def _run_live_simulation(
                             },
                         )
 
+                standstill_hold = (
+                    applied_command.throttle <= 0.0
+                    and applied_command.brake >= STANDSTILL_BRAKE
+                    and frame.ego.speed_mps < STANDSTILL_SPEED_MPS
+                )
                 _event(
                     event_logger,
                     "control_applied",
@@ -1175,9 +1303,12 @@ def _run_live_simulation(
                         "applied_command": applied_command,
                         "scene": scene,
                         "safety_decision": safety_decision,
+                        "standstill_hold": standstill_hold,
                     },
                 )
 
+            if standstill_hold:
+                hold_ego_at_standstill(env)
             observation, reward, terminated, truncated, info = env.step(action)
             total_reward += float(reward)
             steps += 1
@@ -1226,7 +1357,11 @@ def _run_live_simulation(
                 )
             if pacer is not None:
                 pacer.wait(final_simulation_time_s)
-            if terminated or truncated:
+            reached_arrival_point = (
+                arrival_route_m is not None
+                and float(env.agent.navigation.travelled_length) >= arrival_route_m
+            )
+            if terminated or truncated or reached_arrival_point:
                 break
         if config.episode_recording.enabled:
             artifact = write_episode_artifact(
@@ -1272,11 +1407,13 @@ def _run_live_simulation(
         controller=_qualified_name(controller),
         observation=_qualified_name(observation_builder),
         arbiter=_qualified_name(arbiter),
+        request_policy=_qualified_name(request_policy),
         controller_outputs_clamped=controller_outputs_clamped,
         route_completion=float(info.get("route_completion", 0.0)),
-        arrived=bool(info.get("arrive_dest", False)),
+        arrived=reached_arrival_point or bool(info.get("arrive_dest", False)),
         crashed=crashed,
         went_off_road=went_off_road,
+        left_route=left_route,
         safety_interventions=safety_interventions,
         emergency_brakes=emergency_brakes,
         minimum_safety_gap_m=minimum_safety_gap_m,
@@ -1394,11 +1531,48 @@ def _build_arbiter(
     return build_arbiter(config.command_validation, factory=factory)
 
 
+def _build_request_policy(
+    config: AppConfig,
+    factory: RequestPolicyFactory | None,
+) -> RequestPolicy | None:
+    """Build what decides when to ask the model, or None without the VLA subsystem.
+
+    Without an explicit factory DriveBench asks whenever it may, paced by
+    ``vla.minimum_interval_s`` alone, as before the request policy.
+    """
+    if not config.vla.enabled:
+        return None
+    if factory is None:
+        return DefaultRequestPolicy()
+    return build_request_policy(RequestPolicySettings.from_vla(config.vla), factory=factory)
+
+
 def _qualified_name(component: object | None) -> str | None:
     if component is None:
         return None
     component_type = type(component)
     return f"{component_type.__module__}.{component_type.__qualname__}"
+
+
+def _arrival_route_m(env: Any, arrival_distance_m: float | None) -> float | None:
+    """The travelled route length at which the drive arrives, or None for MetaDrive's own.
+
+    Measured as MetaDrive measures route completion, along the route's first lane, from
+    where the ego stands after reset.
+    """
+    if arrival_distance_m is None:
+        return None
+    navigation = env.agent.navigation
+    arrival_route_m = float(navigation.travelled_length) + float(arrival_distance_m)
+    # MetaDrive's own destination begins 5 m short of the route's end.
+    destination_m = float(navigation.total_length) - 5.0
+    if arrival_route_m >= destination_m:
+        raise ValueError(
+            f"scenario.arrival_distance_m={float(arrival_distance_m)} lies beyond MetaDrive's "
+            f"destination, {destination_m - float(navigation.travelled_length):.1f} m along "
+            "this route; lengthen the map or shorten the distance"
+        )
+    return arrival_route_m
 
 
 def _vla_command_executor(config: AppConfig) -> VLACommandExecutor:
@@ -1464,6 +1638,14 @@ def _log_vla_update(
             "arbitration_review",
             sim_time_s=now_s,
             payload={"now_s": now_s, "review": review},
+        )
+    request = update.request
+    if request is not None and request.problem is not None:
+        _event(
+            logger,
+            "request_policy_problem",
+            sim_time_s=now_s,
+            payload={"now_s": now_s, "decision": request},
         )
 
     if update.submission_disposition is InferenceSubmitDisposition.STARTED:

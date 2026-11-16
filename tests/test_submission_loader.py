@@ -345,7 +345,7 @@ def test_submission_without_overlay_values_keeps_the_instructor_configuration(
 @pytest.mark.parametrize(
     ("agent_yaml", "message"),
     [
-        ("simulator:\n  map: S\n", r"agent\.yaml: simulator\.map is not permitted in assignment 2"),
+        ("simulator:\n  map: S\n", r"agent\.yaml: simulator\.map is not permitted in assignment 3"),
         ("controller: [kp\n", r"agent\.yaml is not valid YAML"),
         ("- kp\n- 0.3\n", r"agent\.yaml: the overlay must be a mapping of settings"),
     ],

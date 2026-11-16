@@ -8,6 +8,7 @@ from enum import Enum
 from threading import Lock
 
 from metadrive_starter.vla.provider import (
+    ModelFailureCategory,
     ModelProvider,
     ModelProviderError,
     ModelRequest,
@@ -25,6 +26,11 @@ class FaultKind(str, Enum):
     PROVIDER_ERROR = "provider_error"
     PROVIDER_LATENCY = "provider_latency"
     MALFORMED_OUTPUT = "malformed_output"
+    # The provider refuses for quota, as an HTTP 429 or RESOURCE_EXHAUSTED does.
+    PROVIDER_QUOTA = "provider_quota"
+    # The model is unavailable, as an HTTP 503 says: an outage, scheduled to
+    # outlast a command's horizon rather than one request.
+    PROVIDER_OUTAGE = "provider_outage"
 
 
 _PROVIDER_FAULTS = {
@@ -32,6 +38,8 @@ _PROVIDER_FAULTS = {
     FaultKind.PROVIDER_ERROR,
     FaultKind.PROVIDER_LATENCY,
     FaultKind.MALFORMED_OUTPUT,
+    FaultKind.PROVIDER_QUOTA,
+    FaultKind.PROVIDER_OUTAGE,
 }
 
 
@@ -186,6 +194,16 @@ class FaultInjectingModelProvider:
         kinds = {fault.kind for fault in faults}
         if FaultKind.PROVIDER_TIMEOUT in kinds:
             raise ModelTimeoutError("injected provider timeout")
+        if FaultKind.PROVIDER_OUTAGE in kinds:
+            raise ModelProviderError(
+                "injected provider outage",
+                category=ModelFailureCategory.MODEL_UNAVAILABLE,
+            )
+        if FaultKind.PROVIDER_QUOTA in kinds:
+            raise ModelProviderError(
+                "injected quota exhaustion",
+                category=ModelFailureCategory.QUOTA,
+            )
         if FaultKind.PROVIDER_ERROR in kinds:
             raise ModelProviderError("injected provider error")
 

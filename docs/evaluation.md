@@ -192,7 +192,12 @@ Fault intervals are deterministic and step-based: `start_step` is inclusive and
 - `provider_timeout`;
 - `provider_error`;
 - `provider_latency` with `latency_s`;
-- `malformed_output`.
+- `malformed_output`;
+- `provider_quota`, a refusal for quota, as an HTTP 429;
+- `provider_outage`, the model unavailable, as an HTTP 503.
+
+Every request that reaches the provider counts against
+`vla.maximum_requests_per_run`, whether an injected fault fails it or not.
 
 Activation/clear edges, request fault IDs, provider outcomes, command decisions,
 controls, and terminal outcomes remain in the event log. A fault cannot silently
@@ -238,6 +243,19 @@ Assignment 2 leaves returning True, so each leaves the last command your
 arbiter let through to drive until its action horizon ends. Retrying belongs
 to Assignment 3.
 
+The Assignment 3 structural gates, in the manifest its brief names, give
+every scenario a `request_budget`, which replaces `vla.maximum_requests_per_run`
+for that drive, and fail requests four ways: `provider_timeout`,
+`malformed_output`, `provider_quota`, and a long `provider_outage`. One more
+gate, "request budget respected", checks every budgeted drive's request
+accounting:
+
+```bash
+uv run metadrive-starter gates \
+  --manifest configs/gates-assignment-3.yaml \
+  --config configs/demo-vla-fixture.yaml
+```
+
 ### Deterministic lane-change acceptance
 
 The public fixture-backed suite tests local validation and execution without
@@ -258,6 +276,29 @@ Every case also requires no crash and no off-road result. This proves foundation
 behaviour, not whether a VLM chooses the correct lane. Your controller steers the
 change, so the completion case tests it too: the shipped stub does not reach the
 target lane before the 8 s timeout and aborts.
+
+### Comparing observation and arbitration live
+
+Two live drives differ in everything the two submissions differ in, the controller
+included: a weak speed gain leaves a car at 0.4 m/s where a tuned one has it at
+3 m/s, and that alone changes which proposals arrive in time. To compare
+`observation.py` and `arbitration.py` by themselves, drive both with one controller
+and one set of driving values. In a checkout with the instructor reference, this
+drives a submission with the reference's `controller.py` and tuning:
+
+```bash
+uv run metadrive-starter run \
+  --config configs/demo-vla-qwen3-vl-2b-llama.yaml \
+  --submission submission \
+  --reference-driving \
+  --headless --realtime-factor 0.25 --seed 1
+```
+
+It keeps the rest of your `agent.yaml`, which your observation and arbiter read, and
+replaces the keys that tune the driving. Without `--reference-driving`, `--submission`
+loads everything from your directory, as it always does. A student release has no
+reference, so the option stops there; compare two versions of a seam under your own
+controller instead.
 
 ## Reproducible public and hidden race suites
 

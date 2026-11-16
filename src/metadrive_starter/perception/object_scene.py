@@ -278,14 +278,35 @@ def _lane_relation(
     lateral_m: float,
     in_path: bool,
 ) -> LaneRelation:
-    if isinstance(ego_lane_index, tuple) and isinstance(object_lane_index, tuple):
-        if ego_lane_index[:2] == object_lane_index[:2]:
-            if ego_lane_index[-1] == object_lane_index[-1]:
-                return LaneRelation.SAME
-            return LaneRelation.LEFT if lateral_m >= 0.0 else LaneRelation.RIGHT
+    """The object's lane relative to the ego's, as far as the lane indices tell it.
+
+    ``LEFT`` and ``RIGHT`` mean the lane directly beside the ego's: the lane index says
+    that the object is in it, and its measured position says on which side. An object
+    further over on the same road is related only by its path, as one on another road
+    is, so that a vehicle two lanes over never occupies the lane between.
+    """
+    lanes_apart = _lanes_apart(ego_lane_index, object_lane_index)
+    if lanes_apart == 0:
+        return LaneRelation.SAME
+    if lanes_apart == 1:
+        return LaneRelation.LEFT if lateral_m >= 0.0 else LaneRelation.RIGHT
     if in_path:
         return LaneRelation.CROSSING
     return LaneRelation.UNKNOWN
+
+
+def _lanes_apart(ego_lane_index: object, object_lane_index: object) -> int | None:
+    """How many lanes apart two lanes of one road are; ``None`` across roads."""
+    if not (isinstance(ego_lane_index, tuple) and isinstance(object_lane_index, tuple)):
+        return None
+    if ego_lane_index[:2] != object_lane_index[:2]:
+        return None
+    if ego_lane_index[-1] == object_lane_index[-1]:
+        return 0
+    try:
+        return abs(int(ego_lane_index[-1]) - int(object_lane_index[-1]))
+    except (TypeError, ValueError):
+        return None
 
 
 def _vector2(value: object) -> tuple[float, float]:

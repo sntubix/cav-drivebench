@@ -127,6 +127,22 @@ ASSIGNMENT_2 = Allowlist(
 )
 
 
+# Assignment 3 adds the request policy's pacing, which only slows: the
+# instructor's minimum interval is the fastest any submission may ask. The
+# request budget stays instructor-owned: the base configuration sets it, and a
+# gate scenario may set its own.
+ASSIGNMENT_3 = Allowlist(
+    "assignment 3",
+    (
+        *ASSIGNMENT_2.keys,
+        PermittedKey("vla.minimum_interval_s", only=Direction.RAISE),
+        # Grading runs at the team's temperature when the overlay sets one, so a
+        # team chooses its own variance; the bound is the setting's own, 0 to 2.
+        PermittedKey("vla.vertex.temperature"),
+    ),
+)
+
+
 def apply_overlay(
     config: AppConfig,
     overlay: Mapping[str, Any],
@@ -163,6 +179,16 @@ def apply_overlay(
         return _apply(copy.deepcopy(config), changes)
     except (TypeError, ValueError) as exc:
         raise OverlayError(f"the overlay makes an invalid configuration: {exc}") from exc
+
+
+def without_keys(overlay: Mapping[str, Any], allowlist: Allowlist) -> dict[str, Any]:
+    """Return ``overlay`` less every key ``allowlist`` permits."""
+    permitted = {key.path for key in allowlist.keys}
+    kept: dict[str, Any] = {}
+    for path, value in _leaves(overlay):
+        if path not in permitted:
+            _nest(kept, path.split("."), value)
+    return kept
 
 
 def _not_permitted(path: str, permitted: Iterable[str], allowlist_name: str) -> str:

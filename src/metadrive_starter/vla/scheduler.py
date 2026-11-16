@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock
@@ -20,6 +20,8 @@ class InferenceSubmitDisposition(str, Enum):
     RATE_LIMITED = "rate_limited"
     REQUEST_CAP_EXHAUSTED = "request_cap_exhausted"
     CLOSED = "closed"
+    # The request policy held the request back, so no frame was offered.
+    HELD = "held"
 
 
 @dataclass(frozen=True)
@@ -227,6 +229,23 @@ class VLAInferenceScheduler:
         ):
             return InferenceSubmitDisposition.RATE_LIMITED
         return None
+
+    def wait_for_completion(self, timeout_s: float) -> bool:
+        """Wait at most ``timeout_s`` of wall-clock time for the outstanding
+        inference to finish; True when a completion is ready for :meth:`poll`.
+
+        The control loop never waits. A tool that steps simulation time faster
+        than real time does, so that an answer is collected on the tick it
+        chooses rather than whenever the worker thread got there.
+        """
+        if not _non_negative_finite(timeout_s):
+            raise ValueError("timeout_s must be finite and non-negative")
+        with self._lock:
+            future = self._future
+        if future is None:
+            return False
+        done, _ = wait((future,), timeout=float(timeout_s))
+        return bool(done)
 
     def poll(self) -> InferenceCompletion | None:
         """Collect the current completion once, without raising inference errors."""

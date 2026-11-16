@@ -87,6 +87,25 @@ it caps unsupported 8x/16x MSAA requests at 4x, requests a core OpenGL context,
 and adapts the mixed-generation shaders used by terrain, roads, the skybox, and
 offscreen camera tonemapping.
 
+`--headless` opens no window, but a run that asks a model still renders the
+camera frame each request carries, so it needs working graphics. This drive
+asks a recorded answer, costs nothing, and takes seconds:
+
+```bash
+uv run metadrive-starter run --config configs/demo-vla-fixture.yaml --submission submission --headless --steps 50
+```
+
+Its summary should report `observations_built` above 0 under `vla_metrics`.
+If it stops on a graphics or display error instead, the machine has no display
+to render on, as over SSH, on a minimal Linux install, or on a lab machine with
+nobody logged in at its screen. On Linux, give it a virtual one: install the
+`xvfb` package and put `xvfb-run -a` before the command, here and before every
+run, the gates, and the tests.
+
+```bash
+xvfb-run -a uv run metadrive-starter run --config configs/demo-vla-fixture.yaml --submission submission --headless --steps 50
+```
+
 ## Docker
 
 Build the simulator image:
@@ -101,6 +120,10 @@ Run a headless simulation:
 docker compose run --rm metadrive \
   metadrive-starter run --submission submission --headless --steps 100
 ```
+
+The image carries no cloud dependencies and no credentials, so it cannot reach
+Vertex: run the [Vertex provider](model-providers.md#vertex-course-provider)
+natively, with `uv`.
 
 On Linux, run the complete automated Docker baseline from a fresh checkout:
 

@@ -101,6 +101,93 @@ NEUTRAL_CONTROLLER = (
 )
 
 
+TEAM_OVERLAY = """
+controller:
+  target_speed_mps: 3.0
+  speed_pid:
+    kp: 0.9
+    anti_windup: false
+vla:
+  prompt_policy: Stay right.
+observation:
+  scene_context: false
+command_validation:
+  minimum_confidence: 0.7
+"""
+
+
+@pytest.mark.instructor
+def test_reference_driving_replaces_the_teams_driving_and_keeps_the_rest(
+    capsys,
+    tmp_path,
+) -> None:
+    (tmp_path / "agent.yaml").write_text(TEAM_OVERLAY)
+
+    assert main(["config"]) == 0
+    reference = json.loads(capsys.readouterr().out)
+    assert main(["config", "--submission", str(tmp_path), "--reference-driving"]) == 0
+    config = json.loads(capsys.readouterr().out)
+
+    assert config["controller"] == reference["controller"]
+    assert config["vla"]["prompt_policy"] == "Stay right."
+    assert config["observation"]["scene_context"] is False
+    assert config["command_validation"]["minimum_confidence"] == 0.7
+
+
+@pytest.mark.instructor
+def test_reference_driving_runs_the_teams_seams_under_the_reference_controller(
+    capsys,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    team = _write_controller(tmp_path, NEUTRAL_CONTROLLER)
+    asked = []
+    monkeypatch.setattr(
+        "metadrive_starter.cli.load_observation_for",
+        lambda directory, config: asked.append(("observation", directory)),
+    )
+    monkeypatch.setattr(
+        "metadrive_starter.cli.load_arbitration_for",
+        lambda directory, config: asked.append(("arbitration", directory)),
+    )
+
+    assert main(["run", "--dry-run", "--submission", str(team), "--reference-driving"]) == 0
+    reference = json.loads(capsys.readouterr().out)["controller"]
+    assert main(["run", "--dry-run", "--submission", str(team)]) == 0
+    default = json.loads(capsys.readouterr().out)["controller"]
+
+    assert reference.startswith("reference.")
+    assert default.startswith("submission.")
+    assert asked == [("observation", team), ("arbitration", team)] * 2
+
+
+def test_reference_driving_needs_a_submission(capsys) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main(["run", "--dry-run", "--reference-driving"])
+
+    assert stopped.value.code == 2
+    assert "--reference-driving needs --submission" in capsys.readouterr().err
+
+
+def test_reference_driving_stops_in_a_release(capsys, monkeypatch, tmp_path) -> None:
+    team = _write_controller(tmp_path, NEUTRAL_CONTROLLER)
+    monkeypatch.setattr(submission, "INSTRUCTOR_DIR", tmp_path / "absent")
+
+    assert main(["run", "--dry-run", "--submission", str(team), "--reference-driving"]) == 1
+    assert "no reference controller" in capsys.readouterr().err
+
+
+@pytest.mark.instructor
+def test_reference_driving_refuses_a_file_the_submission_alone_would_refuse(
+    capsys,
+    tmp_path,
+) -> None:
+    (tmp_path / "agent.yaml").write_text("simulator:\n  map: S\n")
+
+    assert main(["config", "--submission", str(tmp_path), "--reference-driving"]) == 1
+    assert "simulator.map is not permitted" in capsys.readouterr().err
+
+
 def test_cli_config_shows_the_submitted_agent_overlay(capsys, tmp_path) -> None:
     (tmp_path / "agent.yaml").write_text("controller:\n  steering_pid:\n    kd: 0.1\n")
 
@@ -117,7 +204,7 @@ def test_cli_rejects_an_agent_overlay_key_outside_the_allowlist(capsys, tmp_path
     assert main(["run", "--dry-run", "--submission", str(submission)]) == 1
 
     error = capsys.readouterr().err
-    assert "agent.yaml: simulator.map is not permitted in assignment 2" in error
+    assert "agent.yaml: simulator.map is not permitted in assignment 3" in error
     assert "Traceback" not in error
 
 
@@ -631,7 +718,7 @@ def test_cli_suite_stops_before_running_a_submission_that_does_not_load(
 
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "agent.yaml: simulator.map is not permitted in assignment 2" in captured.err
+    assert "agent.yaml: simulator.map is not permitted in assignment 3" in captured.err
     assert not output.exists()
 
 

@@ -8,16 +8,32 @@ from metadrive_starter.config import config_from_dict
 from metadrive_starter.overlay import (
     ASSIGNMENT_1,
     ASSIGNMENT_2,
+    ASSIGNMENT_3,
     Allowlist,
     Direction,
     OverlayError,
     PermittedKey,
     apply_overlay,
+    without_keys,
 )
 from metadrive_starter.safety import CommandValidationSettings
 from metadrive_starter.simulation import run_simulation
 from metadrive_starter.submission import apply_submission_overlay
 from metadrive_starter.types import ControlTick
+
+
+def test_without_keys_leaves_what_the_allowlist_does_not_permit() -> None:
+    overlay = {
+        "controller": {"steering_pid": {"kd": 0.1}},
+        "observation": {"scene_context": False},
+        "vla": {"prompt_policy": "Stay right."},
+    }
+
+    assert without_keys(overlay, ASSIGNMENT_1) == {
+        "observation": {"scene_context": False},
+        "vla": {"prompt_policy": "Stay right."},
+    }
+    assert overlay["controller"] == {"steering_pid": {"kd": 0.1}}
 
 
 def test_permitted_key_changes_the_configuration_and_leaves_the_base_alone() -> None:
@@ -110,7 +126,9 @@ def test_one_directional_keys_accept_the_tightening_direction() -> None:
     assert stricter.command_validation.minimum_confidence == 0.7
 
 
-@pytest.mark.parametrize("allowlist", [ASSIGNMENT_1, ASSIGNMENT_2], ids=lambda a: a.name)
+@pytest.mark.parametrize(
+    "allowlist", [ASSIGNMENT_1, ASSIGNMENT_2, ASSIGNMENT_3], ids=lambda a: a.name
+)
 def test_endpoint_settings_cannot_be_set_from_an_overlay(allowlist: Allowlist) -> None:
     overlay = {"vla": {"http": {"endpoint_url": "http://10.0.0.5:8000/v1/chat/completions"}}}
 
@@ -323,6 +341,37 @@ def test_assignment_2_leaves_the_model_run_itself_instructor_owned(path: str) ->
 
     with pytest.raises(OverlayError, match=rf"{re.escape(path)} is not permitted in assignment 2"):
         apply_overlay(config_from_dict({}), overlay, ASSIGNMENT_2)
+
+
+def test_assignment_3_adds_a_slower_minimum_interval_and_the_vertex_temperature() -> None:
+    added = {key.path for key in ASSIGNMENT_3.keys} - {key.path for key in ASSIGNMENT_2.keys}
+
+    assert set(ASSIGNMENT_2.keys) <= set(ASSIGNMENT_3.keys)
+    assert added == {"vla.minimum_interval_s", "vla.vertex.temperature"}
+    slower = apply_overlay(
+        config_from_dict({}), {"vla": {"minimum_interval_s": 2}}, ASSIGNMENT_3
+    )
+    assert slower.vla.minimum_interval_s == 2.0
+    with pytest.raises(OverlayError, match=r"vla\.minimum_interval_s may only be raised"):
+        apply_overlay(config_from_dict({}), {"vla": {"minimum_interval_s": 0.1}}, ASSIGNMENT_3)
+    warmer = apply_overlay(
+        config_from_dict({}), {"vla": {"vertex": {"temperature": 0.7}}}, ASSIGNMENT_3
+    )
+    assert warmer.vla.vertex.temperature == 0.7
+    with pytest.raises(OverlayError, match=r"vla\.vertex\.temperature must be between 0 and 2"):
+        apply_overlay(config_from_dict({}), {"vla": {"vertex": {"temperature": 3}}}, ASSIGNMENT_3)
+    with pytest.raises(OverlayError, match=r"not permitted"):
+        apply_overlay(config_from_dict({}), {"vla": {"vertex": {"model_id": "x"}}}, ASSIGNMENT_3)
+
+
+@pytest.mark.parametrize(
+    "path", ["vla.maximum_requests_per_run", "vla.request_timeout_s", "vla.action_horizon_s"]
+)
+def test_assignment_3_leaves_the_request_budget_and_timing_instructor_owned(path: str) -> None:
+    section, name = path.split(".")
+
+    with pytest.raises(OverlayError, match=rf"{re.escape(path)} is not permitted in assignment 3"):
+        apply_overlay(config_from_dict({}), {section: {name: 1}}, ASSIGNMENT_3)
 
 
 def test_prompt_text_and_observation_channels_apply_from_an_overlay() -> None:

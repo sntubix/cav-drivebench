@@ -10,6 +10,7 @@ from metadrive_starter.config import (
     EventLogSettings,
     FixtureProviderSettings,
     ScenarioVehicleSettings,
+    StoppedVehicleSettings,
     config_from_dict,
     load_config,
 )
@@ -289,6 +290,72 @@ def test_headless_runtime_executes_validated_command_and_replays_log(
     assert pace_calls["factor"] == 0.5
     assert len(pace_calls["wait"]) == summary.steps  # type: ignore[arg-type]
     assert pace_calls["wait"][-1] == summary.simulation_time_s  # type: ignore[index]
+
+
+def _truck_ahead_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, gap_m: float):
+    """A car at rest ``gap_m`` behind a stopped truck, asked for one lane change."""
+    config = load_config(PROJECT_ROOT / "configs" / "lane-change-fixture.yaml")
+    config.simulator.headless = True
+    config.simulator.map = "SS"
+    config.simulator.horizon = 120
+    config.simulator.spawn_longitude_m = None
+    config.vla = replace(config.vla, maximum_requests_per_run=None)
+    truck_length_m, ego_length_m = 5.74, 4.515
+    config.scenario.stopped_vehicles = (
+        StoppedVehicleSettings(
+            vehicle_id="truck",
+            distance_m=gap_m + (truck_length_m + ego_length_m) / 2.0,
+            kind="truck",
+        ),
+    )
+    config.event_log = EventLogSettings(
+        enabled=True,
+        path=str(tmp_path / f"truck-at-{gap_m:g}-events.jsonl"),
+        scenario_id=f"truck-at-{gap_m:g}",
+    )
+    scheduler = VLAInferenceScheduler(
+        VLAInferencePipeline(ChangeLaneRightProvider()),
+        minimum_interval_s=0.0,
+    )
+    monkeypatch.setattr(
+        "metadrive_starter.simulation.build_vla_scheduler",
+        lambda settings, **_: scheduler,
+    )
+    return config, run_simulation(config)
+
+
+@pytest.mark.instructor
+def test_lane_change_stopped_behind_a_truck_never_starts_and_says_why(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config, summary = _truck_ahead_run(tmp_path, monkeypatch, gap_m=3.0)
+    validations = [
+        record.payload["decision"]
+        for record in read_event_log(config.event_log.path)
+        if record.event_type == "command_validation"
+        and record.payload["decision"]["requested_command"]["action"] == "CHANGE_LANE_RIGHT"
+    ]
+
+    assert summary.lane_changes_started == 0
+    assert summary.lane_changes_aborted == 0
+    assert [decision["disposition"] for decision in validations] == ["rejected"]
+    assert "violates lane-change gap" in validations[0]["reasons"][0]
+    assert replay_event_log(config.event_log.path).successful is True
+
+
+@pytest.mark.instructor
+def test_lane_change_from_outside_the_gap_passes_the_truck_it_would_have_stopped_for(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config, summary = _truck_ahead_run(tmp_path, monkeypatch, gap_m=13.0)
+
+    assert summary.lane_changes_started == 1
+    assert summary.lane_changes_completed == 1
+    assert summary.lane_changes_aborted == 0
+    assert summary.crashed is False
+    assert replay_event_log(config.event_log.path).successful is True
 
 
 @pytest.mark.parametrize("map_code", ["XTOC", "S", "C", "X", "O"])

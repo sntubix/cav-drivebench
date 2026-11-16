@@ -22,9 +22,18 @@ import yaml
 
 from metadrive_starter.config import AppConfig
 from metadrive_starter.controllers import VehicleController, VehicleControllerFactory
-from metadrive_starter.overlay import ASSIGNMENT_2, Allowlist, OverlayError, apply_overlay
+from metadrive_starter.overlay import (
+    ASSIGNMENT_1,
+    ASSIGNMENT_2,
+    ASSIGNMENT_3,
+    Allowlist,
+    OverlayError,
+    apply_overlay,
+    without_keys,
+)
 from metadrive_starter.vla.arbitration import AssessmentArbiter, AssessmentArbiterFactory
 from metadrive_starter.vla.observation import ObservationBuilder, ObservationBuilderFactory
+from metadrive_starter.vla.request_policy import RequestPolicy, RequestPolicyFactory
 
 
 class SubmissionError(Exception):
@@ -81,6 +90,13 @@ ARBITRATION_SEAM = SeamSpec(
     protocol=AssessmentArbiter,
 )
 
+REQUEST_POLICY_SEAM = SeamSpec(
+    filename="request_policy.py",
+    entry_point="RequestPolicy",
+    entry_parameters=("settings",),
+    protocol=RequestPolicy,
+)
+
 AGENT_OVERLAY = "agent.yaml"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -127,27 +143,69 @@ def load_arbitration_for(
     return load_arbitration(submission_dir) if config.vla.enabled else None
 
 
+def load_request_policy(submission_dir: Path | str) -> RequestPolicyFactory:
+    """Return a factory for the ``RequestPolicy`` in ``<submission_dir>/request_policy.py``."""
+    return cast(RequestPolicyFactory, load_seam(submission_dir, REQUEST_POLICY_SEAM))
+
+
+def load_request_policy_for(
+    submission_dir: Path | str,
+    config: AppConfig,
+) -> RequestPolicyFactory | None:
+    """Return the request policy factory a run with ``config`` needs, or None.
+
+    ``request_policy.py`` loads only when the run asks the model, like
+    ``arbitration.py``, so a submission without it still drives every other run.
+    """
+    return load_request_policy(submission_dir) if config.vla.enabled else None
+
+
 def apply_submission_overlay(
     config: AppConfig,
     submission_dir: Path | str,
     *,
-    allowlist: Allowlist = ASSIGNMENT_2,
+    allowlist: Allowlist = ASSIGNMENT_3,
 ) -> AppConfig:
     """Return a copy of ``config`` with ``<submission_dir>/agent.yaml`` applied.
 
     Without an agent.yaml the copy carries the instructor values unchanged.
     """
     path = Path(submission_dir) / AGENT_OVERLAY
-    overlay: Any = {}
-    # The messages below say everything; unlike an import failure, the cause's
-    # traceback would point into DriveBench rather than into the team's file.
-    if path.is_file():
-        try:
-            overlay = yaml.safe_load(path.read_text()) or {}
-        except yaml.YAMLError as exc:
-            raise SubmissionError(f"{path} is not valid YAML: {exc}") from None
+    overlay = _read_overlay(path)
     try:
         return apply_overlay(config, overlay, allowlist)
+    except OverlayError as exc:
+        raise SubmissionError(f"{path}: {exc}") from None
+
+
+def _read_overlay(path: Path) -> Any:
+    # The messages below say everything; unlike an import failure, the cause's
+    # traceback would point into DriveBench rather than into the team's file.
+    if not path.is_file():
+        return {}
+    try:
+        return yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError as exc:
+        raise SubmissionError(f"{path} is not valid YAML: {exc}") from None
+
+
+def apply_reference_driving_overlay(
+    config: AppConfig,
+    submission_dir: Path | str,
+) -> AppConfig:
+    """Return a copy of ``config`` as the submission's observation and arbiter
+    read it, driven as the instructor reference drives.
+
+    ``<submission_dir>/agent.yaml`` applies without Assignment 1's keys, which tune
+    the driving, and the reference's tuning follows. What is left of the team's
+    file is what its observation and arbiter read, so that a live comparison
+    differs in those alone. A file ``--submission`` refuses is refused here too.
+    """
+    apply_submission_overlay(config, submission_dir)
+    path = Path(submission_dir) / AGENT_OVERLAY
+    overlay = without_keys(_read_overlay(path), ASSIGNMENT_1)
+    try:
+        return apply_reference_overlay(apply_overlay(config, overlay, ASSIGNMENT_2))
     except OverlayError as exc:
         raise SubmissionError(f"{path}: {exc}") from None
 

@@ -12,16 +12,17 @@ boundaries around it.
 2. Read the briefs, in order; each builds on the one before:
    - [Assignment 1: PID control](course/assignment-1/README.md)
    - [Assignment 2: Observation and arbitration](course/assignment-2/README.md)
+   - [Assignment 3: Request cadence and cloud operation](course/assignment-3/README.md)
 3. Write your work in `submission/`, [check it](docs/getting-started.md#check-your-work)
    with the `gates` command the brief gives, and
    [hand it in](docs/getting-started.md#hand-in) on Moodle.
 
 ## How the project works
 
-Your team writes code only in `submission/`, never in files already in the
-tree. Each assignment adds one piece of the decision system around the model,
-and every file ships as a working stub, so the whole pipeline drives from the
-first day:
+Your team writes code only in `submission/`, never in a file outside it. Each
+assignment adds one piece of the decision system around the model, and every
+file there ships as a working stub for you to edit, so the whole pipeline
+drives from the first day:
 
 | Assignment | You write | It decides | Weight |
 | --- | --- | --- | --- |
@@ -71,6 +72,7 @@ tests/                           unit, integration, and simulator checks
 submission/                      team-owned code, starting from working stubs
 course/assignment-1/             Assignment 1 brief and PID lab notebook
 course/assignment-2/             Assignment 2 brief and its two notebooks
+course/assignment-3/             Assignment 3 brief and its request timing notebook
 fixtures/                        recorded probe scenes, and model answers the gates and demos replay
 ```
 

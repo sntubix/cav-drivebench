@@ -16,6 +16,7 @@ from metadrive_starter.vla import (
     build_vla_prompt,
     decode_vla_assessment,
 )
+from metadrive_starter.vla.vertex_provider import describe_vertex_error
 
 
 SDKLoader = Callable[[], tuple[Any, Any]]
@@ -171,7 +172,7 @@ def run_vertex_preflight(
             PreflightCheck(
                 "text_round_trip",
                 False,
-                f"Vertex text request failed ({type(exc).__name__})",
+                f"Vertex text request failed ({describe_vertex_error(exc)})",
             )
         )
         return _report(effective_project, effective_location, effective_model, checks)
@@ -216,7 +217,7 @@ def run_vertex_preflight(
             PreflightCheck(
                 "image_schema_round_trip",
                 False,
-                f"Vertex image/schema request failed ({type(exc).__name__})",
+                f"Vertex image/schema request failed ({describe_vertex_error(exc)})",
             )
         )
         return _report(effective_project, effective_location, effective_model, checks)

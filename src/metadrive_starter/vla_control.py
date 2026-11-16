@@ -25,6 +25,7 @@ from metadrive_starter.vla import (
     AssessmentArbiter,
     CameraCaptureError,
     DefaultArbiter,
+    DefaultRequestPolicy,
     ReviewDecision,
     ReviewRequest,
     VLAAssessment,
@@ -34,8 +35,12 @@ from metadrive_starter.vla import (
     InferenceSubmitDisposition,
     InferenceSuccess,
     MetaDriveCameraAdapter,
+    RequestDecision,
+    RequestPolicy,
+    RequestTick,
     VLAInferenceScheduler,
     arbitrate_assessment,
+    decide_request,
     model_failure_category,
     review_command,
 )
@@ -57,6 +62,8 @@ class VLAControlUpdate:
     arbitration: ArbitrationDecision | None = None
     # This tick's review of the model command that held authority.
     review: ReviewDecision | None = None
+    # This tick's decision whether to ask the model.
+    request: RequestDecision | None = None
 
 
 class VLACommandRuntime:
@@ -72,6 +79,7 @@ class VLACommandRuntime:
         camera: MetaDriveCameraAdapter | None = None,
         fault_provider: FaultInjectingModelProvider | None = None,
         arbiter: AssessmentArbiter | None = None,
+        request_policy: RequestPolicy | None = None,
     ) -> None:
         if not isinstance(scheduler, VLAInferenceScheduler):
             raise TypeError("scheduler must be a VLAInferenceScheduler")
@@ -87,6 +95,13 @@ class VLACommandRuntime:
             raise TypeError(
                 "arbiter must implement AssessmentArbiter.begin_episode() and arbitrate()"
             )
+        if request_policy is None:
+            request_policy = DefaultRequestPolicy()
+        elif not isinstance(request_policy, RequestPolicy):
+            raise TypeError(
+                "request_policy must implement RequestPolicy.begin_episode() "
+                "and should_request()"
+            )
         self.scheduler = scheduler
         self.policy = policy
         self.executor = executor
@@ -98,9 +113,15 @@ class VLACommandRuntime:
             raise TypeError("fault_provider must be a FaultInjectingModelProvider")
         self.fault_provider = fault_provider
         self.arbiter = arbiter
+        self.request_policy = request_policy
         self._active_validation: CommandValidationDecision | None = None
         # The arbitrated assessment behind the active validation.
         self._active_assessment: VLAAssessment | None = None
+        # When this episode's latest request started.
+        self._last_requested_at_s: float | None = None
+        # Requests left in the budget just before the one in flight started, so
+        # the policy sees the same count however far the worker has got.
+        self._remaining_when_requested: int | None = None
         self._next_request_number = 1
         self._next_episode_number = 2
         self._episode_id = f"{run_id}-episode-1"
@@ -108,6 +129,7 @@ class VLACommandRuntime:
         self.scheduler.begin_episode(self._episode_id)
         self._used_episode_ids = {self._episode_id}
         self.arbiter.begin_episode()
+        self.request_policy.begin_episode()
 
     @property
     def episode_id(self) -> str:
@@ -128,7 +150,9 @@ class VLACommandRuntime:
         self._episode_id = episode_id
         self._used_episode_ids.add(episode_id)
         self._end_authority()
+        self._last_requested_at_s = None
         self.arbiter.begin_episode()
+        self.request_policy.begin_episode()
         return episode_id
 
     def update(
@@ -140,6 +164,7 @@ class VLACommandRuntime:
         ego_speed_mps: float,
         cruise_speed_mps: float,
         active_faults: tuple[FaultSpec, ...] = (),
+        route_speed_cap_mps: float | None = None,
     ) -> VLAControlUpdate:
         if not isinstance(scene, LocalScene):
             raise TypeError("scene must be a LocalScene")
@@ -186,6 +211,52 @@ class VLACommandRuntime:
             # horizon unless this tick's review ends it.
             pass
 
+        failure = (
+            model_failure_category(completion.error)
+            if isinstance(completion, InferenceFailure)
+            else None
+        )
+        self._expire_active_validation(now_s)
+        active = self._active_validation
+        review = review_command(
+            self.arbiter,
+            ReviewRequest(
+                active=self._active_assessment,
+                issued_at_s=(
+                    None if active is None else active.effective_command.issued_at_s
+                ),
+                scene=scene,
+                now_s=now_s,
+                cruise_speed_mps=cruise_speed_mps,
+                failure=failure,
+            ),
+        )
+        if review.revoked:
+            self._end_authority()
+        # The policy decides before any frame is captured, and may only hold a
+        # request back: the scheduler below still paces, admits, and budgets it.
+        in_flight = self.scheduler.has_outstanding_inference
+        request = decide_request(
+            self.request_policy,
+            RequestTick(
+                now_s=now_s,
+                scene=scene,
+                ego_speed_mps=ego_speed_mps,
+                cruise_speed_mps=cruise_speed_mps,
+                active=self._active_assessment,
+                issued_at_s=(
+                    None
+                    if self._active_validation is None
+                    else self._active_validation.effective_command.issued_at_s
+                ),
+                failure=failure,
+                in_flight=in_flight,
+                last_requested_at_s=self._last_requested_at_s,
+                requests_remaining=self._requests_remaining(in_flight),
+                route_speed_cap_mps=route_speed_cap_mps,
+            ),
+        )
+
         runtime_error: Exception | None = None
         submission: InferenceSubmitDisposition | None = None
         submitted_request_id: str | None = None
@@ -198,12 +269,16 @@ class VLACommandRuntime:
             elif not self._request_cap_exhaustion_reported:
                 submission = InferenceSubmitDisposition.REQUEST_CAP_EXHAUSTED
                 self._request_cap_exhaustion_reported = True
+        elif not request.request:
+            submission = InferenceSubmitDisposition.HELD
         else:
             try:
                 if has_fault(active_faults, FaultKind.CAMERA_DROPOUT):
                     raise CameraCaptureError("injected camera dropout")
                 # A frame the scheduler would reject is never captured: while a
                 # request is out, or too soon after one, the render would be wasted.
+                budget = self.scheduler.request_budget
+                remaining = None if budget is None else budget.remaining_requests
                 submission = self.scheduler.would_reject(now_s=now_s)
                 if submission is None:
                     frame = self.camera.capture(env, timestamp_s=now_s)
@@ -227,6 +302,8 @@ class VLACommandRuntime:
                     submitted_episode_id = self.scheduler.active_episode_id
                     submitted_generation_id = self.scheduler.latest_generation_id
                     self._next_request_number += 1
+                    self._last_requested_at_s = now_s
+                    self._remaining_when_requested = remaining
                 elif submission is InferenceSubmitDisposition.REQUEST_CAP_EXHAUSTED:
                     self._request_cap_exhaustion_reported = True
             except Exception as exc:
@@ -236,27 +313,6 @@ class VLACommandRuntime:
                 if self.fault_provider is not None:
                     self.fault_provider.unregister(candidate_request_id)
 
-        self._expire_active_validation(now_s)
-        active = self._active_validation
-        review = review_command(
-            self.arbiter,
-            ReviewRequest(
-                active=self._active_assessment,
-                issued_at_s=(
-                    None if active is None else active.effective_command.issued_at_s
-                ),
-                scene=scene,
-                now_s=now_s,
-                cruise_speed_mps=cruise_speed_mps,
-                failure=(
-                    model_failure_category(completion.error)
-                    if isinstance(completion, InferenceFailure)
-                    else None
-                ),
-            ),
-        )
-        if review.revoked:
-            self._end_authority()
         execution = self.executor.execute(self._active_validation, now_s=now_s)
         return VLAControlUpdate(
             execution=execution,
@@ -271,7 +327,18 @@ class VLACommandRuntime:
             runtime_error=runtime_error,
             arbitration=arbitration,
             review=review,
+            request=request,
         )
+
+    def _requests_remaining(self, in_flight: bool) -> int | None:
+        budget = self.scheduler.request_budget
+        if budget is None:
+            return None
+        if in_flight and self._remaining_when_requested is not None:
+            # The worker spends a request when it reaches the provider, so one in
+            # flight is counted as spent from the moment it started.
+            return max(0, self._remaining_when_requested - 1)
+        return budget.remaining_requests
 
     def _expire_active_validation(self, now_s: float) -> None:
         if self._active_validation is None:
